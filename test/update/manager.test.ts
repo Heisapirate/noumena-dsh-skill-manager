@@ -2,6 +2,7 @@ import { readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { localContentHash, ManifestStore } from '../../src/manifest';
+import { SkillRoot } from '../../src/path-safety';
 import { UpdateManager } from '../../src/update';
 import type { UpdateManagerOptions } from '../../src/update';
 import { cleanupRoots, FakeSkillsShClient, installSkill, readInstalled, snapshot, tempSkillsRoot } from './helpers';
@@ -316,7 +317,7 @@ describe('UpdateManager.update', () => {
       ]),
     );
 
-    await expect(manager(root, client).update({ id: ID })).rejects.toMatchObject({ code: 'traversal' });
+    await expect(manager(root, client).update({ id: ID })).rejects.toMatchObject({ code: 'unsafe-path' });
 
     // The installed skill is unchanged and no escape file was written anywhere.
     expect(await readInstalled(root, SLUG, 'README.md')).toBe('# Readme\n');
@@ -335,7 +336,7 @@ describe('UpdateManager.update', () => {
       snapshot(ID, 'opaque-v2', [{ path: 'SKILL.md', contents: '---\nname: only-name\n---\n# no description\n' }]),
     );
 
-    await expect(manager(root, client).update({ id: ID })).rejects.toMatchObject({ code: 'invalid-snapshot' });
+    await expect(manager(root, client).update({ id: ID })).rejects.toMatchObject({ code: 'malformed-snapshot' });
     expect(await readInstalled(root, SLUG, 'README.md')).toBe('# Readme\n');
   });
 
@@ -345,12 +346,14 @@ describe('UpdateManager.update', () => {
     await installSkill(root, SLUG);
     client.setSnapshot(ID, snapshot(ID, 'opaque-v2', NEW_FILES));
 
+    class FailingPublishRoot extends SkillRoot {
+      override async publishStaged(): Promise<void> {
+        throw new Error('simulated publish failure');
+      }
+    }
+
     await expect(
-      manager(root, client, {
-        publish: async () => {
-          throw new Error('simulated publish failure');
-        },
-      }).update({ id: ID }),
+      manager(root, client, { root: new FailingPublishRoot(root) }).update({ id: ID }),
     ).rejects.toThrow('simulated publish failure');
 
     expect(await readInstalled(root, SLUG, 'README.md')).toBe('# Readme\n');
@@ -360,7 +363,7 @@ describe('UpdateManager.update', () => {
     await expect(readdir(staging)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('keeps the swap but leaves provenance stale when the manifest write fails', async () => {
+  it('rolls back the swap when the manifest write fails, restoring the prior skill', async () => {
     const root = await tempSkillsRoot();
     const client = new FakeSkillsShClient();
     await installSkill(root, SLUG);
@@ -376,10 +379,12 @@ describe('UpdateManager.update', () => {
       }).update({ id: ID }),
     ).rejects.toMatchObject({ code: 'update-partial-failure' });
 
-    // Spec §10 order: the swap already happened (new content on disk)…
-    expect(await readInstalled(root, SLUG, 'README.md')).toBe('# New readme\n');
-    // …but the manifest still holds the pre-update provenance.
+    // The prior skill is restored and provenance is unchanged (no partial state).
+    expect(await readInstalled(root, SLUG, 'README.md')).toBe('# Readme\n');
     const onDisk = await new ManifestStore(root).load();
     expect(onDisk.manifest.skills[SLUG].remoteSourceHash).toBe('opaque-v1');
+    await expect(readdir(join(root, '.system', 'skill-manager', '.staging', SLUG))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 });

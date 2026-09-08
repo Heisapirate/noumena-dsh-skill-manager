@@ -4,11 +4,10 @@ A DeepSeek Harness (DSH) external plugin that adds a **DSH Skill Manager** page
 to the DSH WebUI settings. From it, a user will be able to search skills.sh,
 install and update skills, and manage the plugin-managed skills on this machine.
 
-> **Status: foundation (Issue #9).** This release ships the production plugin
-> skeleton — GitHub-installable package, host/client split, `settings.section`
-> registration, and the typed `/skill-manager` RPC boundary with a live health
-> probe. Search, install, update, and uninstall land in later tickets
-> (Issues #10–#18).
+> **Status: install shipped (Issue #14).** The production plugin skeleton
+> (Issue #9) plus the domain/manifest, path-safety, and SkillsShClient
+> foundations (#10–#12) and the atomic install transaction (#14). Search,
+> update, uninstall, and the managed-list UI land in later tickets (#15–#18).
 
 ## Install
 
@@ -33,7 +32,11 @@ over the `/skill-manager` RPC channel.
   `exports["."]` / `exports["./client"]` / `exports["./package.json"]`.
 - **Host half** (`src/index.ts`) — a cordis entry that registers the
   `/skill-manager` Connection RPC channel and answers a typed `health`/`ping`
-  probe.
+  probe plus the `install` endpoint (Issue #14).
+- **Install transaction** (`src/install.ts`) — source/snapshot validation,
+  staged writes through the path-safety boundary, atomic publish (backup-swap
+  on overwrite), and a manifest update written only after publish succeeds,
+  with full rollback on failure.
 - **Client half** (`src/client/`) — a `settings.section` page titled
   **DSH Skill Manager**, with stable containers for the future search and
   managed-skills sections and a live host-connectivity status over real RPC.
@@ -109,9 +112,10 @@ The built `lib/` is committed so `dsh plugin add` needs no post-install build.
 
 ## Known limitations / deferred work
 
-- No search, install, update, or uninstall yet — those are Issues #10–#18.
-- The well-known (non-GitHub) source boundary is not exercised by the
-  foundation (see ADR-0004).
+- Search, update, uninstall, and the managed-list UI are not implemented yet —
+  those are Issues #15–#18. Install (Issue #14) is implemented end-to-end.
+- The well-known (non-GitHub) source boundary surfaces as **unavailable source**
+  on install (see ADR-0004).
 - Real-browser rendering of the settings section and the browser→host→browser
   RPC round trip are verified manually (see the runtime-smoke evidence in the
   PR for Issue #9).

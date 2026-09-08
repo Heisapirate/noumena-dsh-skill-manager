@@ -1,6 +1,6 @@
 // The update transaction orchestrator (Issue #16, spec §10). It composes the
-// merged foundations — ManifestStore (#10), path safety (#11), and
-// SkillsShClient (#12) — into two behaviors:
+// merged foundations — ManifestStore (#10), path safety (#11, including the
+// #14 backup-swap primitives), and SkillsShClient (#12) — into two behaviors:
 //
 //   checkUpdates()  detect upstream change (remoteSourceHash vs recorded
 //                   remoteSourceHash) and local drift (recomputed
@@ -10,32 +10,26 @@
 //   update()        fetch → validate → drift-gate → stage → swap → manifest,
 //                   in the spec's accepted order, so local modifications are
 //                   never silently overwritten and the manifest is refreshed
-//                   only after a successful swap.
+//                   only after a successful swap. A manifest-save failure rolls
+//                   the swap back, leaving the prior skill intact (matching the
+//                   install transaction's guarantee).
 //
 // Every filesystem mutation goes through the SkillRoot boundary; every failure
 // is normalized to a typed code.
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import {
-  localContentHash,
-  ManifestStore,
-  type LocalContentHash,
-  type RemoteSourceHash,
-  type SkillFile,
-  type SkillManifest,
-  type SkillManifestEntry,
-} from '../manifest';
+import { localContentHash, ManifestStore } from '../manifest';
+import type { RemoteSourceHash, SkillManifest, SkillManifestEntry } from '../manifest';
 import type { ManifestLoadResult } from '../manifest';
 import { assertSkillName, SkillRoot, type SafePath } from '../path-safety';
+import { toRpcError } from '../rpc-error';
 import { classifySource, splitDownloadId, type SkillsShClient } from '../skills-sh';
 import type { SkillSnapshot } from '../skills-sh';
 import type { CheckUpdatesResult, UpdateInfo, UpdateInput, UpdateResult } from '../types';
-import { toRpcError, UpdateError } from './errors';
-import { readSkillFiles } from './files';
+import { UpdateError } from './errors';
+import { readDirFiles, readSkillFiles } from './files';
 import { assertSnapshotSafe } from './snapshot';
 import { buildUpdateInfo } from './status';
-import { recoverInterruptedSwap, swapStaged } from './swap';
+import { recoverInterruptedSwap } from './swap';
 
 /** The manifest operations the transaction needs (a ManifestStore satisfies it). */
 export interface ManifestStoreLike {
@@ -52,10 +46,8 @@ export interface UpdateManagerOptions {
   now?: () => number;
   /** Path-safety boundary (defaults to `new SkillRoot(skillsRoot)`). */
   root?: SkillRoot;
-  /** Manifest store (defaults to `new ManifestStore(skillsRoot)`). */
+  /** Manifest store (defaults to a `ManifestStore` over `skillsRoot`). */
   store?: ManifestStoreLike;
-  /** Swap seam (defaults to the safe staged swap). Tests override to force failure. */
-  publish?: (root: SkillRoot, slug: string) => Promise<void>;
 }
 
 /**
@@ -64,20 +56,16 @@ export interface UpdateManagerOptions {
  * layer delegates `checkUpdates`/`update` to it.
  */
 export class UpdateManager {
-  private readonly skillsRoot: string;
   private readonly client: SkillsShClient;
   private readonly now: () => number;
   private readonly root: SkillRoot;
   private readonly store: ManifestStoreLike;
-  private readonly publish: (root: SkillRoot, slug: string) => Promise<void>;
 
   constructor(options: UpdateManagerOptions) {
-    this.skillsRoot = options.skillsRoot;
     this.client = options.client;
     this.now = options.now ?? Date.now;
     this.root = options.root ?? new SkillRoot(options.skillsRoot);
     this.store = options.store ?? new ManifestStore(options.skillsRoot);
-    this.publish = options.publish ?? ((root, slug) => swapStaged(root, slug));
   }
 
   /**
@@ -162,7 +150,7 @@ export class UpdateManager {
 
     // Fetch + validate the latest snapshot before any filesystem mutation.
     const snapshot: SkillSnapshot = await this.client.getSnapshot(id);
-    assertSnapshotSafe(snapshot);
+    assertSnapshotSafe(this.root, slug, snapshot);
 
     // Drift gate: never silently overwrite local modifications.
     const currentLocalContentHash = localContentHash(await readSkillFiles(this.root, slug));
@@ -191,25 +179,30 @@ export class UpdateManager {
     }
 
     // Stage the replacement inside `.staging/` (path-safety enforced per file).
-    await this.root.removeStagingDir(slug);
-    const staging = await this.root.createStagingDir(slug);
+    let staged: SafePath;
     try {
-      await writeSnapshotFiles(this.root, staging, snapshot.files);
+      await this.root.removeStagingDir(slug);
+      staged = await this.root.createStagingDir(slug);
+      await this.root.materializeFiles(staged, snapshot.files);
     } catch (err) {
       await this.root.removeStagingDir(slug).catch(() => {});
       throw err;
     }
 
-    // Swap: the old installation is preserved until the new one is in place.
+    // Fresh local-content hash from the bytes actually staged.
+    const newLocalContentHash = localContentHash(await readDirFiles(this.root, staged));
+
+    // Swap: preserve the old installation until the new one is in place.
     try {
-      await this.publish(this.root, slug);
+      await this.root.moveSkillToBackup(slug);
+      await this.root.publishStaged(slug);
     } catch (err) {
+      await this.root.restoreBackup(slug).catch(() => {});
       await this.root.removeStagingDir(slug).catch(() => {});
       throw err;
     }
 
     // Manifest update only after a successful swap (spec §10(6)).
-    const newLocalContentHash = localContentHash(snapshot.files);
     const updated: SkillManifestEntry = {
       ...entry,
       remoteSourceHash: snapshot.remoteSourceHash as RemoteSourceHash,
@@ -223,13 +216,18 @@ export class UpdateManager {
     try {
       await this.store.save(next);
     } catch (err) {
-      // The files are already swapped; provenance is stale until a later save.
+      // Roll the swap back so the prior usable skill survives (no partial state).
+      await this.root.removeSkillDir(slug).catch(() => {});
+      await this.root.restoreBackup(slug).catch(() => {});
+      await this.root.removeStagingDir(slug).catch(() => {});
       throw new UpdateError(
         'update-partial-failure',
-        `skill files updated but manifest write failed: ${err instanceof Error ? err.message : String(err)}`,
-        {},
+        `skill update failed to record: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+
+    // Commit: drop the old backup (best-effort; staging was consumed by publish).
+    await this.root.removeBackup(slug).catch(() => {});
 
     return {
       slug,
@@ -240,18 +238,5 @@ export class UpdateManager {
       discardedLocalChanges: drifted,
       applied: true,
     };
-  }
-}
-
-/** Write snapshot files under the staging directory, validating each path. */
-async function writeSnapshotFiles(
-  root: SkillRoot,
-  staging: SafePath,
-  files: readonly SkillFile[],
-): Promise<void> {
-  for (const file of files) {
-    const target = root.relativeFile(staging, file.path);
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, file.contents, 'utf8');
   }
 }

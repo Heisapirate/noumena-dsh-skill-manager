@@ -1,37 +1,71 @@
 // Snapshot validation for the update transaction, composed from the existing
-// boundaries: path safety (assertRelativePath) and the SKILL.md frontmatter
-// extractor. The SkillsShClient already validates the payload *shape*; this
-// adds the update-specific semantic checks the transaction must satisfy before
-// anything is staged or replaced.
+// boundaries: the safe-path boundary (#11) resolves every file path, and the
+// SKILL.md frontmatter extractor (#12) verifies a usable skill. The rules
+// mirror the install transaction (#14) so the two cannot disagree: non-empty
+// files, no unsafe/duplicate paths, and a `SKILL.md` whose `name` matches the
+// slug and declares a non-empty `description`.
 
-import { assertRelativePath } from '../path-safety';
+import { isValidSkillName, PathSafetyError, type SkillRoot } from '../path-safety';
 import { extractFrontmatterMetadata } from '../skills-sh';
 import type { SkillSnapshot } from '../skills-sh';
 import { UpdateError } from './errors';
 
 /**
  * Validate a fetched snapshot before any filesystem mutation. Refuses (1) an
- * empty snapshot, (2) any file path that fails the safe-relative-path grammar,
- * and (3) a snapshot whose `SKILL.md` frontmatter does not declare both `name`
- * and `description` (the plugin's minimum for a usable skill).
+ * empty snapshot, (2) any file path that fails safe resolution (mapped to
+ * `unsafe-path`), (3) duplicate paths, and (4) a `SKILL.md` that is missing or
+ * whose frontmatter name/description are invalid.
  */
-export function assertSnapshotSafe(snapshot: SkillSnapshot): void {
-  if (!Array.isArray(snapshot.files) || snapshot.files.length === 0) {
-    throw new UpdateError('invalid-snapshot', 'snapshot contains no files');
+export function assertSnapshotSafe(root: SkillRoot, slug: string, snapshot: SkillSnapshot): void {
+  const files = snapshot.files;
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new UpdateError('malformed-snapshot', 'snapshot contains no files');
   }
-  for (const file of snapshot.files) {
-    // Throws PathSafetyError (`traversal`, `unsafe-path`, …) on any escape form.
-    assertRelativePath(file.path);
+
+  const skillDir = root.skillDir(slug);
+  const seen = new Set<string>();
+  let hasSkillMd = false;
+
+  for (const file of files) {
+    try {
+      root.relativeFile(skillDir, file.path);
+    } catch (err) {
+      if (err instanceof PathSafetyError) {
+        throw new UpdateError('unsafe-path', err.message, { path: err.path });
+      }
+      throw err;
+    }
+
+    const key = root.caseInsensitive ? file.path.toLowerCase() : file.path;
+    if (seen.has(key)) {
+      throw new UpdateError('malformed-snapshot', `snapshot contains a duplicate file path ${JSON.stringify(file.path)}`);
+    }
+    seen.add(key);
+
+    if (file.path === 'SKILL.md') {
+      hasSkillMd = true;
+      validateSkillMd(slug, file.contents);
+    }
   }
-  const skillMd = snapshot.files.find((file) => file.path === 'SKILL.md');
-  if (!skillMd) {
-    throw new UpdateError('invalid-snapshot', 'snapshot is missing SKILL.md');
+
+  if (!hasSkillMd) {
+    throw new UpdateError('malformed-snapshot', 'snapshot is missing SKILL.md');
   }
-  const metadata = extractFrontmatterMetadata(skillMd.contents);
-  if (!metadata.name || !metadata.description) {
+}
+
+/** `SKILL.md` must declare a kebab-case `name` (equal to the slug) and a description. */
+function validateSkillMd(slug: string, contents: string): void {
+  const metadata = extractFrontmatterMetadata(contents);
+  if (!metadata.name || !isValidSkillName(metadata.name)) {
+    throw new UpdateError('malformed-snapshot', 'SKILL.md frontmatter must declare a valid kebab-case name');
+  }
+  if (metadata.name !== slug) {
     throw new UpdateError(
-      'invalid-snapshot',
-      'SKILL.md frontmatter must declare both a name and a description',
+      'malformed-snapshot',
+      `SKILL.md name ${JSON.stringify(metadata.name)} does not match the requested slug ${JSON.stringify(slug)}`,
     );
+  }
+  if (typeof metadata.description !== 'string' || metadata.description.trim() === '') {
+    throw new UpdateError('malformed-snapshot', 'SKILL.md frontmatter must declare a non-empty description');
   }
 }

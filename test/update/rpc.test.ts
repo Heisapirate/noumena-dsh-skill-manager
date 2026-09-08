@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { SkillRoot } from '../../src/path-safety';
 import { createRpcHandler } from '../../src/rpc';
 import { SkillManagerService } from '../../src/service';
 import { cleanupRoots, FakeSkillsShClient, installSkill, snapshot, tempSkillsRoot } from './helpers';
@@ -111,14 +112,18 @@ describe('createRpcHandler update', () => {
     await installSkill(root, SLUG);
     client.setSnapshot(ID, snapshot(ID, 'opaque-v2', NEW_FILES));
 
+    class FailingPublishRoot extends SkillRoot {
+      override async publishStaged(): Promise<void> {
+        throw new Error('boom');
+      }
+    }
+
     const service = new SkillManagerService({
       version: '1.0.0',
       skillsRoot: root,
       client,
       now: () => 0,
-      publish: async () => {
-        throw new Error('boom');
-      },
+      root: new FailingPublishRoot(root),
     });
 
     const result = await createRpcHandler(service)('update', { id: ID }, signal());

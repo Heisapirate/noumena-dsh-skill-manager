@@ -1,7 +1,8 @@
-import { ENDPOINT_CHECK_UPDATES, ENDPOINT_HEALTH, ENDPOINT_PING, ENDPOINT_UPDATE } from './contract';
+import { ENDPOINT_CHECK_UPDATES, ENDPOINT_HEALTH, ENDPOINT_INSTALL, ENDPOINT_PING, ENDPOINT_UPDATE } from './contract';
+import { toRpcError } from './rpc-error';
 import { SkillManagerService } from './service';
-import type { RpcHandler, RpcResult, UpdateInput } from './types';
-import { toRpcError, UpdateError } from './update';
+import { UpdateError } from './update';
+import type { InstallRequest, RpcHandler, RpcResult, UpdateInput } from './types';
 
 /** Endpoints that answer the health probe; `ping` is a liveness alias of `health`. */
 const HEALTH_ENDPOINTS = new Set([ENDPOINT_HEALTH, ENDPOINT_PING]);
@@ -12,10 +13,14 @@ const HEALTH_ENDPOINTS = new Set([ENDPOINT_HEALTH, ENDPOINT_PING]);
  * the typed `{ok,value}|{ok:false,error}` result — never a raw throw.
  */
 export function createRpcHandler(service: SkillManagerService): RpcHandler {
-  return async (endpoint: string, payload: unknown, _signal: AbortSignal): Promise<RpcResult<unknown>> => {
+  return async (endpoint: string, payload: unknown, signal: AbortSignal): Promise<RpcResult<unknown>> => {
     try {
       if (HEALTH_ENDPOINTS.has(endpoint)) {
         return { ok: true, value: service.health() };
+      }
+      if (endpoint === ENDPOINT_INSTALL) {
+        const request = coerceInstallRequest(payload);
+        return { ok: true, value: await service.install(request, signal) };
       }
       if (endpoint === ENDPOINT_CHECK_UPDATES) {
         return { ok: true, value: await service.checkUpdates() };
@@ -34,6 +39,15 @@ export function createRpcHandler(service: SkillManagerService): RpcHandler {
     } catch (err) {
       return { ok: false, error: toRpcError(err) };
     }
+  };
+}
+
+/** Coerce the `install` payload; an absent/invalid id is surfaced by the transaction as typed. */
+function coerceInstallRequest(payload: unknown): InstallRequest {
+  const body = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
+  return {
+    id: typeof body.id === 'string' ? body.id : '',
+    overwrite: body.overwrite === true,
   };
 }
 

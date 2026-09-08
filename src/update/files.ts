@@ -1,22 +1,20 @@
-// Read a skill directory back into the snapshot-file shape so its local
-// content hash can be recomputed and compared to the recorded value (spec §7).
-// This is the only place drift detection reads the filesystem, and it never
-// follows symlinks/junctions: a link is fingerprinted by its target string so
-// the recompute stays deterministic and cannot escape the skill directory.
+// Read a validated directory back into the snapshot-file shape so a local
+// content hash can be recomputed and compared to a recorded value (spec §7).
+// Symlinks/junctions are never followed: a link is fingerprinted by its target
+// string, keeping the recompute deterministic and contained.
 
 import { readFile, readdir, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SkillFile } from '../manifest';
-import type { SkillRoot } from '../path-safety';
+import type { SafePath, SkillRoot } from '../path-safety';
 
 /**
- * Read an installed skill's files back into the snapshot-file shape so its
- * local content hash can be recomputed and compared to the recorded value
- * (spec §7). Symlinks/junctions are never followed: a link is fingerprinted by
- * its target string, keeping the recompute deterministic and contained.
+ * Read every regular file under a validated directory (already branded as a
+ * `SafePath`) into `{path, contents}` entries, with `/`-separated relative
+ * paths. Symlinks are recorded by target string, never followed.
  */
-export async function readSkillFiles(root: SkillRoot, slug: string): Promise<SkillFile[]> {
-  const dir = root.skillDir(slug);
+export async function readDirFiles(root: SkillRoot, dir: SafePath): Promise<SkillFile[]> {
+  root.assertInside(dir);
   const files: SkillFile[] = [];
   const pending: Array<{ abs: string; rel: string }> = [{ abs: dir, rel: '' }];
 
@@ -45,4 +43,9 @@ export async function readSkillFiles(root: SkillRoot, slug: string): Promise<Ski
     }
   }
   return files;
+}
+
+/** Read an installed skill's files (the directory is resolved + validated first). */
+export function readSkillFiles(root: SkillRoot, slug: string): Promise<SkillFile[]> {
+  return readDirFiles(root, root.skillDir(slug));
 }
