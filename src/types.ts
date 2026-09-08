@@ -184,3 +184,45 @@ export interface UpdateResult {
    */
   applied: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Managed-skills listing (Issue #15). The host composes the reconciled manifest
+// (#10) with the accepted update-status model (#16); the client renders this
+// DTO verbatim and never re-derives status.
+// ---------------------------------------------------------------------------
+
+/**
+ * One plugin-managed skill as reported by the `list` endpoint. Only skills
+ * recorded in the manifest AND present on disk are returned. `id` and `slug`
+ * are registry identifiers for later update/uninstall actions; no filesystem
+ * path crosses this boundary.
+ */
+export interface ManagedSkill {
+  /** The kebab-case skill name that keys the manifest entry (uninstall id). */
+  slug: string;
+  /** Provenance as the manifest records it (GitHub `owner/repo`). */
+  source: string;
+  /** Full skills.sh id (`owner/repo/slug`) for the later update action. */
+  id: string;
+  /** The manifest's recorded `remoteSourceHash` (opaque upstream fingerprint). */
+  remoteSourceHash: string;
+  /** The manifest's recorded `localContentHash` (plugin-computed SHA-256). */
+  localContentHash: string;
+  /** ISO-8601 timestamp of the original install. */
+  installedAt: string;
+  /** ISO-8601 timestamp of the most recent install/update. */
+  updatedAt: string;
+  /** The accepted update-status state — the single source of truth for the UI. */
+  status: UpdateStatus;
+  /** Recomputed `localContentHash` differs from the recorded one (local drift). */
+  localModified: boolean;
+  /** Latest upstream `remoteSourceHash` differs from the recorded one. */
+  updateAvailable: boolean;
+  /** Present only for `source-unavailable` / `remote-check-failure`. */
+  error?: UpdateCheckError;
+}
+
+/** Response of the `list` endpoint. */
+export interface ManagedSkillsResult {
+  skills: ManagedSkill[];
+}

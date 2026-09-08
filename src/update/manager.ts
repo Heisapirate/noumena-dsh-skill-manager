@@ -24,7 +24,13 @@ import { assertSkillName, SkillRoot, type SafePath } from '../path-safety';
 import { toRpcError } from '../rpc-error';
 import { classifySource, splitDownloadId, type SkillsShClient } from '../skills-sh';
 import type { SkillSnapshot } from '../skills-sh';
-import type { CheckUpdatesResult, UpdateInfo, UpdateInput, UpdateResult } from '../types';
+import type {
+  CheckUpdatesResult,
+  ManagedSkillsResult,
+  UpdateInfo,
+  UpdateInput,
+  UpdateResult,
+} from '../types';
 import { UpdateError } from './errors';
 import { assertSnapshotSafe } from './snapshot';
 import { buildUpdateInfo } from './status';
@@ -73,9 +79,52 @@ export class UpdateManager {
    * recorded as `source-unavailable` or `remote-check-failure` on that skill.
    */
   async checkUpdates(): Promise<CheckUpdatesResult> {
-    await recoverInterruptedSwap(this.root);
+    const states = await this.computeSkillStates({ recover: true });
+    return { updates: states.map(({ info }) => info) };
+  }
+
+  /**
+   * List every plugin-managed skill present on disk with its provenance and the
+   * accepted update status (Issue #15). Foreign directories are never returned,
+   * and a manifest entry whose directory is missing is already reconciled away
+   * by {@link ManifestStore.load}, so the list matches what the UI may manage.
+   * This is a read-only projection (Issue #15 security note): it never runs the
+   * interrupted-swap recovery, unlike {@link checkUpdates}.
+   */
+  async list(): Promise<ManagedSkillsResult> {
+    const states = await this.computeSkillStates({ recover: false });
+    return {
+      skills: states.map(({ slug, id, entry, info }) => ({
+        slug,
+        source: entry.source,
+        id,
+        remoteSourceHash: entry.remoteSourceHash,
+        localContentHash: entry.localContentHash,
+        installedAt: entry.installedAt,
+        updatedAt: entry.updatedAt,
+        status: info.status,
+        localModified: info.localModified,
+        updateAvailable: info.updateAvailable,
+        ...(info.error ? { error: info.error } : {}),
+      })),
+    };
+  }
+
+  /**
+   * Compute per-skill status for every managed, present-on-disk skill. Shared by
+   * `checkUpdates` and `list` so there is exactly one status algorithm; the two
+   * endpoints differ only in how they project the result into a DTO. `recover`
+   * gates the interrupted-swap recovery (a mutation), which only the update
+   * check/transaction paths run — `list` stays read-only.
+   */
+  private async computeSkillStates(options: {
+    recover: boolean;
+  }): Promise<Array<{ slug: string; id: string; entry: SkillManifestEntry; info: UpdateInfo }>> {
+    if (options.recover) {
+      await recoverInterruptedSwap(this.root);
+    }
     const { manifest } = await this.store.load();
-    const updates: UpdateInfo[] = [];
+    const states: Array<{ slug: string; id: string; entry: SkillManifestEntry; info: UpdateInfo }> = [];
 
     for (const [slug, entry] of Object.entries(manifest.skills)) {
       const id = `${entry.source}/${slug}`;
@@ -95,18 +144,22 @@ export class UpdateManager {
         remoteError = toRpcError(err);
       }
 
-      updates.push(
-        buildUpdateInfo({
+      states.push({
+        slug,
+        id,
+        entry,
+        info: buildUpdateInfo({
           slug,
           entry,
           latestRemoteSourceHash,
           currentLocalContentHash,
           remoteError,
         }),
-      );
+      });
     }
 
-    return { updates: updates.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)) };
+    states.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+    return states;
   }
 
   /**

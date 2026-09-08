@@ -16,6 +16,7 @@ import type {
   HealthInfo,
   InstallRequest,
   InstallResult,
+  ManagedSkillsResult,
   SearchResponse,
   UninstallRequest,
   UninstallResult,
@@ -95,6 +96,16 @@ export class SkillManagerService {
   /** Install one GitHub-backed skill as an atomic transaction (Issue #14). */
   install(request: InstallRequest, signal?: AbortSignal): Promise<InstallResult> {
     return installSkill(this.deps, request, signal);
+  }
+
+  /**
+   * List the plugin-managed skills present on disk with provenance + status
+   * (Issue #15). Delegates to the update manager so the list reuses the same
+   * reconciliation and status model as {@link checkUpdates} — never a second
+   * algorithm.
+   */
+  list(): Promise<ManagedSkillsResult> {
+    return this.updateManager.list();
   }
 
   /** Update detection for every plugin-managed skill (Issue #16). */

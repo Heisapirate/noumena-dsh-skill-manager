@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ClientConnection } from '../src/client/connection';
 import { createSkillManagerApi, SkillManagerRpcError } from '../src/client/rpc';
-import { ENDPOINT_DESCRIBE, ENDPOINT_SEARCH, RPC_CHANNEL } from '../src/contract';
-import type { RpcResult, SkillSearchResult } from '../src/types';
+import { ENDPOINT_DESCRIBE, ENDPOINT_LIST, ENDPOINT_SEARCH, RPC_CHANNEL } from '../src/contract';
+import type { ManagedSkill, RpcResult, SkillSearchResult } from '../src/types';
 
 const githubResult: SkillSearchResult = {
   id: 'microsoft/azure-skills/python-appservice-deploy',
@@ -13,6 +13,19 @@ const githubResult: SkillSearchResult = {
   pageUrl: 'https://skills.sh/microsoft/azure-skills/python-appservice-deploy',
   installable: true,
   sourceKind: 'github',
+};
+
+const managedSkill: ManagedSkill = {
+  slug: 'find-skills',
+  source: 'owner/repo',
+  id: 'owner/repo/find-skills',
+  remoteSourceHash: 'opaque-v1',
+  localContentHash: 'a'.repeat(64),
+  installedAt: '2024-01-01T00:00:00.000Z',
+  updatedAt: '2024-01-01T00:00:00.000Z',
+  status: 'up-to-date',
+  localModified: false,
+  updateAvailable: false,
 };
 
 type Handler = (
@@ -63,6 +76,18 @@ describe('createSkillManagerApi', () => {
       connection(async () => ({ ok: true, value: { description: null } })),
     );
     await expect(api.describe('owner/repo/slug')).resolves.toBeNull();
+  });
+
+  it('lists managed skills over the channel and unwraps skills', async () => {
+    const calls: Array<{ endpoint: string; payload: unknown }> = [];
+    const api = createSkillManagerApi(
+      connection(async (_c, endpoint, payload) => {
+        calls.push({ endpoint, payload });
+        return { ok: true, value: { skills: [managedSkill] } };
+      }),
+    );
+    await expect(api.list()).resolves.toEqual([managedSkill]);
+    expect(calls).toEqual([{ endpoint: ENDPOINT_LIST, payload: {} }]);
   });
 
   it('throws a typed SkillManagerRpcError on a host failure', async () => {

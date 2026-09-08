@@ -2,14 +2,22 @@
 // `/skill-manager` endpoint names; the search engine and UI depend on the
 // narrow `SkillManagerApi`, never on the connection or on skills.sh details.
 
-import { ENDPOINT_DESCRIBE, ENDPOINT_SEARCH, RPC_CHANNEL } from '../contract';
-import type { DescribeResponse, RpcResult, SearchResponse, SkillSearchResult } from '../types';
+import { ENDPOINT_DESCRIBE, ENDPOINT_LIST, ENDPOINT_SEARCH, RPC_CHANNEL } from '../contract';
+import type {
+  DescribeResponse,
+  ManagedSkill,
+  ManagedSkillsResult,
+  RpcResult,
+  SearchResponse,
+  SkillSearchResult,
+} from '../types';
 import type { ClientConnection } from './connection';
 
-/** The search surface the client orchestration and UI consume. */
+/** The search + managed-skills surface the client orchestration and UI consume. */
 export interface SkillManagerApi {
   search(query: string, signal?: AbortSignal): Promise<SkillSearchResult[]>;
   describe(id: string, signal?: AbortSignal): Promise<string | null>;
+  list(): Promise<ManagedSkill[]>;
 }
 
 /** A normalized failure crossing the RPC boundary. */
@@ -42,6 +50,14 @@ export function createSkillManagerApi(connection: ClientConnection): SkillManage
         signal,
       );
       return unwrap(result).description;
+    },
+    async list() {
+      const result = await connection.rpc.call<ManagedSkillsResult>(
+        RPC_CHANNEL,
+        ENDPOINT_LIST,
+        {},
+      );
+      return unwrap(result).skills;
     },
   };
 }
