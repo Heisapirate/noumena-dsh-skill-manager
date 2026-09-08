@@ -1,0 +1,7 @@
+# Plugin-owned manifest for skill provenance
+
+The skill manager keeps a plugin-owned JSON manifest at `$DSH_HOME/skills/.system/skill-manager/manifest.json`, recording per installed skill its `source`, `slug`, content `hash`, `installedAt`, and `updatedAt`. The manifest is the sole authority for what counts as a **plugin-managed skill**: the plugin lists, updates, and uninstalls only entries recorded there, and never touches a skill absent from it. The `.system` subdirectory is already skipped by DSH's filesystem skill discovery, so the manifest can never be misread as a skill.
+
+We chose a dedicated file over a `ctx.settings` namespace because provenance is internal state, not user configuration: a settings namespace would bloat the user's `settings.yaml` with per-skill records and let a hand edit corrupt the source of truth. Writes use `@deepseek-ai/dsh-atomic-write` (`writeFileAtomic` + `withFileLock`) so the manifest is replaced atomically and serialized across processes. On load the manifest is reconciled against the filesystem: a skill directory on disk with no manifest entry is **foreign** and left alone; a manifest entry whose directory is missing is dropped as already-uninstalled.
+
+**Considered options:** dedicated JSON in `.system/` (chosen); `ctx.settings` namespace (rejected — semantic mismatch, user-editable, bloats settings). **Consequences:** manifest/filesystem drift is expected and reconciliation is the recovery path; a hash mismatch means the skill was modified locally, which gates update and uninstall behind confirmation.
