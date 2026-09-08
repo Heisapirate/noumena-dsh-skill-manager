@@ -25,12 +25,16 @@ A skill under the Skills root whose provenance is recorded in the plugin's Manif
 _Avoid_: installed skill, owned skill
 
 **Manifest**:
-The plugin-owned provenance record — per skill: source, skill name, content hash, and install time — that separates plugin-managed skills from skills installed by users or other tools.
+The plugin-owned provenance record — per skill: source, skill name, remote source hash, local content hash, and install time — that separates plugin-managed skills from skills installed by users or other tools.
 _Avoid_: lockfile, registry, database, index
 
-**Content hash**:
-A hash of a skill's installed files, captured at install and compared against the latest source to detect an update.
-_Avoid_: version, checksum, revision
+**Remote source hash**:
+The opaque hash fingerprint returned by skills.sh for a skill's upstream source; used only to detect whether the upstream/source skill has changed.
+_Avoid_: content hash, checksum, version
+
+**Local content hash**:
+The plugin-computed deterministic SHA-256 over a skill's installed local files; used only to detect local modification or drift.
+_Avoid_: remote hash, upstream hash, checksum
 
 **Host / Client**:
 The plugin's two halves. The Host runs inside the DSH Node process and owns filesystem and network access; the Client runs in the WebUI browser and owns only the interface. They communicate over Connection RPC.
