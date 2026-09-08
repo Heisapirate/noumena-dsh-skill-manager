@@ -1,5 +1,12 @@
-# skills.sh is consumed through the anonymous search + download endpoints
+# skills.sh API: documented v1 is unusable locally; compatibility endpoints sit behind a client adapter
 
-The plugin reads skills.sh through exactly two anonymous endpoints: `GET /api/search` for keyword search (returns `id` = `owner/repo/slug`, `name`/`skillId`, `installs`, `source`) and `GET /api/download/{owner}/{repo}/{slug}` for a skill's full file snapshot plus its `hash` (a SHA-256 over the file contents). Neither search surface exposes a `description`, so descriptions are obtained by parsing the `SKILL.md` YAML frontmatter returned by the download endpoint.
+skills.sh exposes two distinct tiers, and the plugin treats them differently:
 
-This is a deliberate choice against the documented `/api/v1/*` API — which requires a Vercel OIDC bearer token that a locally installed plugin cannot mint — and against scraping the skills.sh HTML page, which is fragile and yields no `hash` or files. **Consequences:** the search list shows name/source/installs immediately and fetches descriptions eagerly, one `/api/download` call per result with a bounded concurrency and an in-memory cache keyed by slug; the same call also pre-warms the install payload and the `hash` used for update detection.
+- **`/api/v1/*`** is the **documented, stable** surface. It is neither rejected nor obsolete — it is simply **unsuitable for this plugin** because it requires a Vercel OIDC bearer token, which a locally installed DSH plugin cannot mint.
+- **`/api/search`** and **`/api/download/{owner}/{repo}/{slug}`** are **credential-free compatibility endpoints** that the official `vercel-labs/skills` CLI itself uses (`src/find.ts`, `src/blob.ts`). They are implementation-backed and carry **no documented stability contract** — their shape may change or disappear without notice.
+
+Both tiers are therefore hidden behind a single host-side **`SkillsShClient`** adapter, the only code allowed to know endpoint shapes. Application and UI code depend only on the adapter's typed results (`search`, `getSnapshot`), never on raw response JSON. The adapter maps every failure — including a change in a compatibility endpoint's shape, a 404, an auth/rate-limit response, or a timeout — to typed errors and a defined degradation path ("search unavailable" / "unavailable source"), so the plugin fails gracefully instead of breaking when skills.sh changes.
+
+Descriptions still come from the `SKILL.md` YAML frontmatter inside a download snapshot; search returns no `description` on either tier. **How** the search list hydrates descriptions (eager snapshot vs GitHub-tree + raw `SKILL.md`) is deliberately left to the Phase 2 prototype benchmark — see the architecture doc.
+
+**Revisit trigger:** if skills.sh later publishes a *documented, credential-free* API usable by a local client, reopen this ADR and prefer that surface over the compatibility endpoints.

@@ -35,13 +35,23 @@ skills it manages.
 
 ## 3. skills.sh integration
 
-- **Search:** `GET https://skills.sh/api/search?q=<≥2 chars>&limit=&owner=` →
+- **API tiers.** `/api/v1/*` is the documented, stable surface but requires a
+  Vercel OIDC token a local plugin cannot mint; `/api/search` and
+  `/api/download/{owner}/{repo}/{slug}` are credential-free compatibility
+  endpoints used by the official `vercel-labs/skills` CLI and carry no stability
+  contract. (ADR-0003)
+- **Adapter.** a host-side `SkillsShClient` is the only code that knows these
+  endpoint shapes; UI/application code depends only on its typed results. Typed
+  failure and a defined degradation path are required if the compatibility
+  endpoints change.
+- **Search:** `GET /api/search?q=<≥2 chars>&limit=&owner=` →
   `skills[].{id, name, skillId, installs, source}`; page link = `https://skills.sh/{id}`.
-- **Detail/install:** `GET https://skills.sh/api/download/{owner}/{repo}/{slug}` →
-  `{ files: [{path, contents}], hash }` (anonymous; GitHub sources only).
-- **Description:** `SKILL.md` YAML frontmatter `description`, parsed from the
-  download snapshot. Search list fetches descriptions eagerly with concurrency
-  ≈4 and an in-memory cache keyed by slug (also yields `hash` for update badges).
+- **Snapshot:** `GET /api/download/{owner}/{repo}/{slug}` →
+  `{ files: [{path, contents}], hash }` (GitHub sources only). `hash` is the
+  remote snapshot hash (§4.5).
+- **Description source:** `SKILL.md` YAML frontmatter `description`, parsed from
+  a snapshot. The **fetch strategy** for the search list is an open Phase 2
+  benchmark (§8), not a locked decision.
 - **Networking policy:** timeout ~10s; exponential backoff + jitter; honor
   `Retry-After` on 429; retry 503; map 400/401/403/404/429/503 to typed errors.
   All calls are host-side; the browser never contacts skills.sh.
@@ -58,23 +68,45 @@ skills it manages.
    against the skills root, require `realpath` containment; refuse `..`, absolute,
    drive-letter, backslash, and symlink/junction escapes; stage writes and rename
    in. Writes/deletes can never leave `$DSH_HOME/skills/<name>`.
-4. **Install** — one `/api/download` → write `files[].path` under
+4. **Install** — one `/api/download` snapshot → write `files[].path` under
    `$DSH_HOME/skills/<name>/`; existing directory ⇒ duplicate/overwrite prompt;
    stage to `.system/skill-manager/.staging/` then rename (dir appears complete or
    not at all); remove staging on failure.
-5. **Update** — latest `/api/download` `hash` ≠ manifest `hash` ⇒ update
-   available; if installed files' computed hash ≠ recorded hash (local edits) do
-   not silently replace — require confirmation.
+5. **Content hash & update** — the manifest records the **remote snapshot hash**
+   (`/api/download` `hash`). Update available ⇐ latest snapshot `hash` ≠ manifest
+   `hash`. Local modification is detected by recomputing the **local content
+   hash** with the identical function and comparing; if it diverges from the
+   recorded hash, do not silently replace — require confirmation. (See below.)
 6. **Uninstall** — only manifest-recorded + hash-matching skills; remove directory
    then manifest entry (atomic); confirm; reconcile on next load if interrupted.
-7. **Description source** — `/api/download` → `SKILL.md` frontmatter (ADR-0003).
-8. **Networking** — anonymous search + download only; typed error handling and
-   retry/backoff as in §3.
+7. **Description source** — `SKILL.md` frontmatter from a snapshot (ADR-0003);
+   hydration strategy is open (§8).
+8. **Networking** — `SkillsShClient` adapter over search + download; typed errors
+   and retry/backoff as in §3.
 9. **DSH integration** — `settings.section` page; host owns fs/network/path
    validation; browser UI via `/skill-manager` Connection RPC (ADR-0001…0003).
 10. **UI states** — see §5.
 11. **Testing boundaries** — see §6.
 12. **Acceptance criteria** — see §7.
+
+**Snapshot/content hash (deterministic function).** SHA-256 over the snapshot's
+files sorted lexicographically by path, updating the digest with each file's
+path followed by its contents:
+
+```
+snapshotHash(files):
+  h = SHA256()
+  for f in files sorted by path (byte order):
+    h.update(f.path); h.update(f.contents)
+  return hex(h.digest())
+```
+
+The remote `/api/download` `hash` and the locally recomputed content hash are
+this **same function** computed at different times/places: they are semantically
+identical for an unmodified install and diverge exactly when the on-disk files
+differ from the snapshot (the drift signal). The exact byte-level convention
+(path/contents separator, encoding) is confirmed against a real `/api/download`
+fixture in the Phase 2 prototype.
 
 ## 5. UI states
 
@@ -102,9 +134,13 @@ skills it manages.
   symlink/junction, `..\..` all refused; valid names pass.
 - **manifest** — load/reconcile drift; atomic write; foreign-vs-managed
   classification.
-- **API client** — 400/401/403/404/429/503 → typed errors; retry/backoff; timeout.
+- **content hash** — deterministic function (sorted path + contents); recomputed
+  local hash equals a downloaded fixture's remote `hash`; a one-byte edit changes
+  it.
+- **API client** — 400/401/403/404/429/503 → typed errors; retry/backoff; timeout;
+  compatibility-endpoint shape change → typed degradation, never a crash.
 
-## 7. Acceptance criteria
+## 7. Acceptance criteria (implementation)
 
 | Exam requirement | Testable criterion |
 |---|---|
@@ -112,19 +148,42 @@ skills it manages.
 | 展示名称/简介/来源/安装量/链接 | each result row renders name, description, source, install count, link `https://skills.sh/{id}` |
 | 安装并让 DSH 发现 | after confirm, `$DSH_HOME/skills/<name>/SKILL.md` exists with valid frontmatter and DSH lists the skill |
 | 列出插件管理的本机技能 | lists exactly manifest-recorded skills present on disk; foreign skills excluded |
-| 检查更新并更新 | "update available" when latest hash ≠ manifest hash; update replaces files + updates manifest |
+| 检查更新并更新 | "update available" when latest remote snapshot hash ≠ manifest hash; local recompute detects edits; update replaces files + updates manifest |
 | 卸载 | removes skill dir + manifest entry; DSH no longer lists it |
-| 处理 7 种状态 | loading/empty/network-failure/duplicate/update-failure/unavailable-source all reachable (§5) |
+| 处理 6 种状态 | loading/empty/network-failure/duplicate-install/update-failure/unavailable-source all reachable (§5) |
 | `dsh plugin` 安装 | repo has `dsh.bundle.patch` + `cordis.patch.yml` + `exports["."]` + `dsh.client` + `exports["./client"]`; install succeeds and settings page appears |
 | 独立入口 | registers a top-level `settings.section` |
 | 不改 DSH 源码 | zero DSH source edits |
 | 写入/更新/删除只在技能目录 | path-safety tests prove all mutations stay inside `$DSH_HOME/skills` |
 | 覆盖/更新/卸载前确认 | UI confirmation gate before each destructive op |
 | build/typecheck/test 命令 | `pnpm build`, `pnpm check`, `pnpm test` succeed |
-| 测试覆盖 | vitest covers install, update, uninstall, path safety (≥ §6) |
+| 测试覆盖 | vitest covers install, update, uninstall, path safety, content hash (§6) |
 | README 安装命令 | README has a copy-paste `dsh plugin --profile web add github:Heisapirate/noumena-dsh-skill-manager` |
 
-## 8. Remaining open questions
+## 8. Phase 2 prototype — open decision + acceptance criteria
 
-See `docs/planning/open-questions.md` (rc.6→rc.1 drift verification, skills.sh
-rate-limit facts, deferred well-known discovery).
+**Description-fetch strategy (benchmark, then decide).** `/api/download` returns
+the full snapshot (not just `SKILL.md`), and some root-level skills have large
+snapshots; the official CLI fetches raw `SKILL.md` separately for metadata before
+downloading the full snapshot for install. Candidate approaches to benchmark:
+
+- **A.** bounded visible-row `/api/download` hydration (concurrency-capped + cached);
+- **B.** GitHub Trees API + raw `SKILL.md` metadata fetch, full snapshot only on install;
+- **C.** any other current-source-supported approach discovered during the prototype.
+
+The prototype must measure, per candidate: requests per search, payload size,
+latency, rate-limit behavior, cacheability, stale-query cancellation, and failure
+UX. The production choice is made from this evidence.
+
+**DSH 0.1.2-rc.1 prototype acceptance criteria.** On the exact installed rc.1
+environment, the prototype must prove all six:
+1. `dsh plugin` installs the plugin from its GitHub repository;
+2. `dsh web` still boots with no client-module loader failures;
+3. the custom `settings.section` renders;
+4. browser → host RPC succeeds;
+5. host → browser response succeeds;
+6. uninstall + restart returns DSH to a clean state.
+
+## 9. Remaining open questions
+
+See `docs/planning/open-questions.md`.
