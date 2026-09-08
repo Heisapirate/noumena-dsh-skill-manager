@@ -1,0 +1,5 @@
+# dsh-skill-manager: mounts the host module into the profile's entry tree so
+# the host half of the plugin loads.
+- insert:
+    - id: dsh-skill-manager
+      name: 'dsh-skill-manager'
