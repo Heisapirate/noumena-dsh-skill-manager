@@ -45,7 +45,7 @@ export async function readDirFiles(root: SkillRoot, dir: SafePath): Promise<Skil
   return files;
 }
 
-/** Read an installed skill's files (the directory is resolved + validated first). */
+/** Read a plugin-managed skill's files (the directory is resolved + validated first). */
 export function readSkillFiles(root: SkillRoot, slug: string): Promise<SkillFile[]> {
   return readDirFiles(root, root.skillDir(slug));
 }

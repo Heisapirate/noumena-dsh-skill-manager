@@ -21,10 +21,10 @@ describe('deriveUpdateStatus', () => {
   it('reports up-to-date when both hashes match', () => {
     expect(
       deriveUpdateStatus({
-        recordedRemoteSourceHash: 'opaque-v1',
-        latestRemoteSourceHash: 'opaque-v1',
-        recordedLocalContentHash: 'a'.repeat(64),
-        currentLocalContentHash: 'a'.repeat(64),
+        recordedRemoteSourceHash: remote('opaque-v1'),
+        latestRemoteSourceHash: remote('opaque-v1'),
+        recordedLocalContentHash: local('a'.repeat(64)),
+        currentLocalContentHash: local('a'.repeat(64)),
       }),
     ).toBe('up-to-date');
   });
@@ -32,10 +32,10 @@ describe('deriveUpdateStatus', () => {
   it('reports update-available when only the remote hash changed', () => {
     expect(
       deriveUpdateStatus({
-        recordedRemoteSourceHash: 'opaque-v1',
-        latestRemoteSourceHash: 'opaque-v2',
-        recordedLocalContentHash: 'a'.repeat(64),
-        currentLocalContentHash: 'a'.repeat(64),
+        recordedRemoteSourceHash: remote('opaque-v1'),
+        latestRemoteSourceHash: remote('opaque-v2'),
+        recordedLocalContentHash: local('a'.repeat(64)),
+        currentLocalContentHash: local('a'.repeat(64)),
       }),
     ).toBe('update-available');
   });
@@ -43,10 +43,10 @@ describe('deriveUpdateStatus', () => {
   it('reports locally-modified when only the local content drifted', () => {
     expect(
       deriveUpdateStatus({
-        recordedRemoteSourceHash: 'opaque-v1',
-        latestRemoteSourceHash: 'opaque-v1',
-        recordedLocalContentHash: 'a'.repeat(64),
-        currentLocalContentHash: 'b'.repeat(64),
+        recordedRemoteSourceHash: remote('opaque-v1'),
+        latestRemoteSourceHash: remote('opaque-v1'),
+        recordedLocalContentHash: local('a'.repeat(64)),
+        currentLocalContentHash: local('b'.repeat(64)),
       }),
     ).toBe('locally-modified');
   });
@@ -54,10 +54,10 @@ describe('deriveUpdateStatus', () => {
   it('reports update-available-and-locally-modified when both axes differ', () => {
     expect(
       deriveUpdateStatus({
-        recordedRemoteSourceHash: 'opaque-v1',
-        latestRemoteSourceHash: 'opaque-v2',
-        recordedLocalContentHash: 'a'.repeat(64),
-        currentLocalContentHash: 'b'.repeat(64),
+        recordedRemoteSourceHash: remote('opaque-v1'),
+        latestRemoteSourceHash: remote('opaque-v2'),
+        recordedLocalContentHash: local('a'.repeat(64)),
+        currentLocalContentHash: local('b'.repeat(64)),
       }),
     ).toBe('update-available-and-locally-modified');
   });
@@ -65,10 +65,10 @@ describe('deriveUpdateStatus', () => {
   it('reports source-unavailable when the remote check returned source-unavailable', () => {
     expect(
       deriveUpdateStatus({
-        recordedRemoteSourceHash: 'opaque-v1',
+        recordedRemoteSourceHash: remote('opaque-v1'),
         latestRemoteSourceHash: null,
-        recordedLocalContentHash: 'a'.repeat(64),
-        currentLocalContentHash: 'a'.repeat(64),
+        recordedLocalContentHash: local('a'.repeat(64)),
+        currentLocalContentHash: local('a'.repeat(64)),
         remoteError: { code: 'source-unavailable' },
       }),
     ).toBe('source-unavailable');
@@ -77,10 +77,10 @@ describe('deriveUpdateStatus', () => {
   it('reports remote-check-failure for any other remote failure', () => {
     expect(
       deriveUpdateStatus({
-        recordedRemoteSourceHash: 'opaque-v1',
+        recordedRemoteSourceHash: remote('opaque-v1'),
         latestRemoteSourceHash: null,
-        recordedLocalContentHash: 'a'.repeat(64),
-        currentLocalContentHash: 'a'.repeat(64),
+        recordedLocalContentHash: local('a'.repeat(64)),
+        currentLocalContentHash: local('a'.repeat(64)),
         remoteError: { code: 'network-unavailable' },
       }),
     ).toBe('remote-check-failure');
@@ -91,10 +91,10 @@ describe('deriveUpdateStatus', () => {
     // passed a stale "latest" value alongside the error.
     expect(
       deriveUpdateStatus({
-        recordedRemoteSourceHash: 'opaque-v1',
-        latestRemoteSourceHash: 'opaque-v1',
-        recordedLocalContentHash: 'a'.repeat(64),
-        currentLocalContentHash: 'a'.repeat(64),
+        recordedRemoteSourceHash: remote('opaque-v1'),
+        latestRemoteSourceHash: remote('opaque-v1'),
+        recordedLocalContentHash: local('a'.repeat(64)),
+        currentLocalContentHash: local('a'.repeat(64)),
         remoteError: { code: 'timeout' },
       }),
     ).toBe('remote-check-failure');
@@ -106,8 +106,8 @@ describe('buildUpdateInfo', () => {
     const info = buildUpdateInfo({
       slug: 'find-skills',
       entry: entry({ remoteSourceHash: remote('opaque-v1') }),
-      latestRemoteSourceHash: 'opaque-v2',
-      currentLocalContentHash: 'b'.repeat(64),
+      latestRemoteSourceHash: remote('opaque-v2'),
+      currentLocalContentHash: local('b'.repeat(64)),
     });
 
     expect(info).toEqual({

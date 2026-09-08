@@ -100,8 +100,8 @@ export async function cleanupRoots(): Promise<void> {
 
 /**
  * Install a skill directly (write files + record a consistent manifest entry).
- * This stands in for the merged-later install transaction; update operates only
- * on already-installed, manifest-recorded skills.
+ * This stands in for the install transaction; update operates only on
+ * plugin-managed, manifest-recorded skills.
  */
 export async function installSkill(
   root: string,

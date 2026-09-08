@@ -26,11 +26,13 @@ export class UpdateError extends Error {
     this.details = details;
   }
 
+  /** The RPC-serializable `{code,message,details}` form of this error. */
   toRpcError(): { code: string; message: string; details: Record<string, unknown> } {
     return { code: this.code, message: this.message, details: this.details };
   }
 }
 
+/** Type guard narrowing an unknown thrown value to {@link UpdateError}. */
 export function isUpdateError(err: unknown): err is UpdateError {
   return err instanceof UpdateError;
 }

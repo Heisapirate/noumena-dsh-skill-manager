@@ -8,15 +8,15 @@
 // other — the branded manifest types make accidental cross-assignment a type
 // error, and this module keeps them in separate inputs for the same reason.
 
-import type { SkillManifestEntry } from '../manifest';
+import type { LocalContentHash, RemoteSourceHash, SkillManifestEntry } from '../manifest';
 import type { UpdateCheckError, UpdateInfo, UpdateStatus } from '../types';
 
 /** The recorded + freshly observed values needed to resolve a skill's status. */
 export interface StatusInput {
-  recordedRemoteSourceHash: string;
-  latestRemoteSourceHash: string | null;
-  recordedLocalContentHash: string;
-  currentLocalContentHash: string | null;
+  recordedRemoteSourceHash: RemoteSourceHash;
+  latestRemoteSourceHash: RemoteSourceHash | null;
+  recordedLocalContentHash: LocalContentHash;
+  currentLocalContentHash: LocalContentHash | null;
   remoteError?: { code: string };
 }
 
@@ -65,8 +65,8 @@ export function deriveUpdateStatus(input: StatusInput): UpdateStatus {
 export interface UpdateInfoInput {
   slug: string;
   entry: SkillManifestEntry;
-  latestRemoteSourceHash: string | null;
-  currentLocalContentHash: string | null;
+  latestRemoteSourceHash: RemoteSourceHash | null;
+  currentLocalContentHash: LocalContentHash | null;
   remoteError?: UpdateCheckError;
 }
 

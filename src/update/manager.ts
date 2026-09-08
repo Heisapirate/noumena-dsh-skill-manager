@@ -18,7 +18,7 @@
 // is normalized to a typed code.
 
 import { localContentHash, ManifestStore } from '../manifest';
-import type { RemoteSourceHash, SkillManifest, SkillManifestEntry } from '../manifest';
+import type { LocalContentHash, RemoteSourceHash, SkillManifest, SkillManifestEntry } from '../manifest';
 import type { ManifestLoadResult } from '../manifest';
 import { assertSkillName, SkillRoot, type SafePath } from '../path-safety';
 import { toRpcError } from '../rpc-error';
@@ -81,17 +81,17 @@ export class UpdateManager {
     for (const [slug, entry] of Object.entries(manifest.skills)) {
       const id = `${entry.source}/${slug}`;
 
-      let currentLocalContentHash: string | null = null;
+      let currentLocalContentHash: LocalContentHash | null = null;
       try {
         currentLocalContentHash = localContentHash(await readSkillFiles(this.root, slug));
       } catch {
         // Local recompute failed; we cannot assert drift, so it is not reported.
       }
 
-      let latestRemoteSourceHash: string | null = null;
+      let latestRemoteSourceHash: RemoteSourceHash | null = null;
       let remoteError: UpdateInfo['error'];
       try {
-        latestRemoteSourceHash = (await this.client.getSnapshot(id)).remoteSourceHash;
+        latestRemoteSourceHash = (await this.client.getSnapshot(id)).remoteSourceHash as RemoteSourceHash;
       } catch (err) {
         remoteError = toRpcError(err);
       }
