@@ -1,31 +1,16 @@
-import { ENDPOINT_HEALTH, ENDPOINT_INSTALL, ENDPOINT_PING } from './contract';
-import { InstallError } from './install';
-import { PathSafetyError } from './path-safety';
+import { ENDPOINT_CHECK_UPDATES, ENDPOINT_HEALTH, ENDPOINT_INSTALL, ENDPOINT_PING, ENDPOINT_UPDATE } from './contract';
+import { toRpcError } from './rpc-error';
 import { SkillManagerService } from './service';
-import { isSkillsShError } from './skills-sh';
-import type { InstallRequest, RpcHandler, RpcResult } from './types';
+import { UpdateError } from './update';
+import type { InstallRequest, RpcHandler, RpcResult, UpdateInput } from './types';
 
 /** Endpoints that answer the health probe; `ping` is a liveness alias of `health`. */
 const HEALTH_ENDPOINTS = new Set([ENDPOINT_HEALTH, ENDPOINT_PING]);
 
-/** Normalize any thrown value to the RPC `{code,message,details}` error shape. */
-function toRpcError(err: unknown): { code: string; message: string; details: object } {
-  if (err instanceof InstallError) return err.toRpcError();
-  if (isSkillsShError(err)) {
-    const object = err.toObject();
-    return { code: object.code, message: object.message, details: object.details };
-  }
-  if (err instanceof PathSafetyError) return err.toRpcError();
-  if (err instanceof Error) {
-    return { code: 'internal', message: err.message, details: {} };
-  }
-  return { code: 'internal', message: 'Unknown error', details: {} };
-}
-
 /**
  * Build the host-side handler for the `/skill-manager` channel. It dispatches a
  * channel-relative endpoint to a service method and normalizes every outcome to
- * the typed `{ok,value}|{ok,false,error}` result — never a raw throw.
+ * the typed `{ok,value}|{ok:false,error}` result — never a raw throw.
  */
 export function createRpcHandler(service: SkillManagerService): RpcHandler {
   return async (endpoint: string, payload: unknown, signal: AbortSignal): Promise<RpcResult<unknown>> => {
@@ -34,13 +19,14 @@ export function createRpcHandler(service: SkillManagerService): RpcHandler {
         return { ok: true, value: service.health() };
       }
       if (endpoint === ENDPOINT_INSTALL) {
-        const body = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
-        const request: InstallRequest = {
-          id: typeof body.id === 'string' ? body.id : '',
-          overwrite: body.overwrite === true,
-        };
-        const value = await service.install(request, signal);
-        return { ok: true, value };
+        const request = coerceInstallRequest(payload);
+        return { ok: true, value: await service.install(request, signal) };
+      }
+      if (endpoint === ENDPOINT_CHECK_UPDATES) {
+        return { ok: true, value: await service.checkUpdates() };
+      }
+      if (endpoint === ENDPOINT_UPDATE) {
+        return { ok: true, value: await service.update(parseUpdateInput(payload)) };
       }
       return {
         ok: false,
@@ -54,4 +40,32 @@ export function createRpcHandler(service: SkillManagerService): RpcHandler {
       return { ok: false, error: toRpcError(err) };
     }
   };
+}
+
+/** Coerce the `install` payload; an absent/invalid id is surfaced by the transaction as typed. */
+function coerceInstallRequest(payload: unknown): InstallRequest {
+  const body = (typeof payload === 'object' && payload !== null ? payload : {}) as Record<string, unknown>;
+  return {
+    id: typeof body.id === 'string' ? body.id : '',
+    overwrite: body.overwrite === true,
+  };
+}
+
+/** Validate the `update` payload shape; throws an `invalid-request` error. */
+function parseUpdateInput(payload: unknown): UpdateInput {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new UpdateError('invalid-request', 'update payload must be an object');
+  }
+  const record = payload as Record<string, unknown>;
+  if (typeof record.id !== 'string' || record.id.length === 0) {
+    throw new UpdateError('invalid-request', 'update payload requires a non-empty string "id"');
+  }
+  const input: UpdateInput = { id: record.id };
+  if (record.discardLocalChanges !== undefined) {
+    if (typeof record.discardLocalChanges !== 'boolean') {
+      throw new UpdateError('invalid-request', '"discardLocalChanges" must be a boolean');
+    }
+    input.discardLocalChanges = record.discardLocalChanges;
+  }
+  return input;
 }
