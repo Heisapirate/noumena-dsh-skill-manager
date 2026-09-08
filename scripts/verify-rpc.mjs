@@ -13,6 +13,7 @@ import { apply } from '../lib/index.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const isolatedHome = join(root, '..', '.dsh-home-18');
+const skillsRoot = join(isolatedHome, 'skills');
 
 // A GitHub search result + snapshot fixture keyed by slug, so install/update
 // round-trip deterministically. The two hashes are opaque and distinct by slug.
@@ -56,10 +57,12 @@ function mockFetch(url) {
 }
 
 async function main() {
-  await rm(isolatedHome, { recursive: true, force: true });
-  // The real DSH runtime always creates `$DSH_HOME/skills`; recreate it here so
-  // the host's safe-path boundary can resolve the skills root.
-  await mkdir(join(isolatedHome, 'skills'), { recursive: true });
+  // Clear ONLY the skills subtree, never the whole DSH_HOME: the same home holds
+  // the installed plugin profile (`profiles/web`), which must survive a
+  // verification run. The real DSH runtime always creates `$DSH_HOME/skills`;
+  // recreate it here so the host's safe-path boundary can resolve the skills root.
+  await rm(skillsRoot, { recursive: true, force: true });
+  await mkdir(skillsRoot, { recursive: true });
   process.env.DSH_HOME = isolatedHome;
   globalThis.fetch = mockFetch;
 
