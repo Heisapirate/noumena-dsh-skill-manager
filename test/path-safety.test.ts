@@ -344,6 +344,41 @@ describe('SkillRoot filesystem behavior', () => {
   });
 });
 
+describe('SkillRoot.classifySkill', () => {
+  let rootPath: string;
+  let root: SkillRoot;
+
+  beforeEach(async () => {
+    rootPath = await mkdtemp(join(tmpdir(), 'dsh-classify-'));
+    root = new SkillRoot(rootPath);
+  });
+
+  afterEach(async () => {
+    await rm(rootPath, { recursive: true, force: true });
+  });
+
+  it('reports missing for an absent path', async () => {
+    await expect(root.classifySkill('nope')).resolves.toBe('missing');
+  });
+
+  it('reports directory for a real directory', async () => {
+    await mkdir(root.skillDir('real'), { recursive: true });
+    await expect(root.classifySkill('real')).resolves.toBe('directory');
+  });
+
+  it('reports file when the path is a regular file', async () => {
+    await writeFile(root.skillDir('as-file'), 'x');
+    await expect(root.classifySkill('as-file')).resolves.toBe('file');
+  });
+
+  it.skipIf(!JUNCTION_SUPPORTED)('reports symlink for a junction (never follows it)', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'dsh-classify-out-'));
+    await symlink(outside, root.skillDir('link'), 'junction');
+    await expect(root.classifySkill('link')).resolves.toBe('symlink');
+    await rm(outside, { recursive: true, force: true });
+  });
+});
+
 describe('PathSafetyError', () => {
   it('exposes a typed RPC-normalizable shape', () => {
     const err = new PathSafetyError('traversal', 'bad path', '/x/y');

@@ -12,3 +12,5 @@ export const ENDPOINT_INSTALL = 'install';
 export const ENDPOINT_CHECK_UPDATES = 'checkUpdates';
 /** Update transaction endpoint (Issue #16). */
 export const ENDPOINT_UPDATE = 'update';
+/** Remove a plugin-managed skill (Issue #17; destructive, confirmation-gated). */
+export const ENDPOINT_UNINSTALL = 'uninstall';

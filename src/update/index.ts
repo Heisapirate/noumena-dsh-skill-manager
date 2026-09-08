@@ -2,7 +2,6 @@
 
 export { UpdateError, isUpdateError } from './errors';
 export type { UpdateErrorCode } from './errors';
-export { readDirFiles, readSkillFiles } from './files';
 export { UpdateManager } from './manager';
 export type { ManifestStoreLike, UpdateManagerOptions } from './manager';
 export { assertSnapshotSafe } from './snapshot';

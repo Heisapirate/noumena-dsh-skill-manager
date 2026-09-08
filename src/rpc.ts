@@ -1,8 +1,16 @@
-import { ENDPOINT_CHECK_UPDATES, ENDPOINT_HEALTH, ENDPOINT_INSTALL, ENDPOINT_PING, ENDPOINT_UPDATE } from './contract';
+import {
+  ENDPOINT_CHECK_UPDATES,
+  ENDPOINT_HEALTH,
+  ENDPOINT_INSTALL,
+  ENDPOINT_PING,
+  ENDPOINT_UNINSTALL,
+  ENDPOINT_UPDATE,
+} from './contract';
+import { SkillManagerError } from './errors';
 import { toRpcError } from './rpc-error';
 import { SkillManagerService } from './service';
 import { UpdateError } from './update';
-import type { InstallRequest, RpcHandler, RpcResult, UpdateInput } from './types';
+import type { InstallRequest, RpcHandler, RpcResult, UninstallRequest, UpdateInput } from './types';
 
 /** Endpoints that answer the health probe; `ping` is a liveness alias of `health`. */
 const HEALTH_ENDPOINTS = new Set([ENDPOINT_HEALTH, ENDPOINT_PING]);
@@ -27,6 +35,9 @@ export function createRpcHandler(service: SkillManagerService): RpcHandler {
       }
       if (endpoint === ENDPOINT_UPDATE) {
         return { ok: true, value: await service.update(parseUpdateInput(payload)) };
+      }
+      if (endpoint === ENDPOINT_UNINSTALL) {
+        return { ok: true, value: await service.uninstall(parseUninstallInput(payload)) };
       }
       return {
         ok: false,
@@ -64,6 +75,31 @@ function parseUpdateInput(payload: unknown): UpdateInput {
   if (record.discardLocalChanges !== undefined) {
     if (typeof record.discardLocalChanges !== 'boolean') {
       throw new UpdateError('invalid-request', '"discardLocalChanges" must be a boolean');
+    }
+    input.discardLocalChanges = record.discardLocalChanges;
+  }
+  return input;
+}
+
+/** Validate the `uninstall` payload shape; throws an `invalid-request` error. */
+function parseUninstallInput(payload: unknown): UninstallRequest {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new SkillManagerError('invalid-request', 'uninstall payload must be an object');
+  }
+  const record = payload as Record<string, unknown>;
+  if (typeof record.id !== 'string' || record.id.length === 0) {
+    throw new SkillManagerError('invalid-request', 'uninstall payload requires a non-empty string "id"');
+  }
+  const input: UninstallRequest = { id: record.id };
+  if (record.confirm !== undefined) {
+    if (typeof record.confirm !== 'boolean') {
+      throw new SkillManagerError('invalid-request', '"confirm" must be a boolean');
+    }
+    input.confirm = record.confirm;
+  }
+  if (record.discardLocalChanges !== undefined) {
+    if (typeof record.discardLocalChanges !== 'boolean') {
+      throw new SkillManagerError('invalid-request', '"discardLocalChanges" must be a boolean');
     }
     input.discardLocalChanges = record.discardLocalChanges;
   }

@@ -48,6 +48,25 @@ export type RpcHandler = (
   signal: AbortSignal,
 ) => Promise<RpcResult<unknown>>;
 
+/**
+ * Request for the `uninstall` endpoint. `id` is the kebab-case skill name
+ * (the manifest key). Uninstall is destructive, so it is confirmation-gated:
+ * `confirm` acknowledges the removal itself, and `discardLocalChanges`
+ * acknowledges that locally modified content will be discarded (spec §11).
+ */
+export interface UninstallRequest {
+  id: string;
+  /** Acknowledge the removal itself. */
+  confirm?: boolean;
+  /** Acknowledge discarding locally modified content (drift). */
+  discardLocalChanges?: boolean;
+}
+
+/** Successful uninstall result. */
+export interface UninstallResult {
+  ok: true;
+}
+
 // ---------------------------------------------------------------------------
 // Update detection + transaction (Issue #16). These DTOs are shared by the
 // host and client halves, so they stay free of any Node-only import.

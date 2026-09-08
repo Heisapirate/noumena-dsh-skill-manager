@@ -2,4 +2,5 @@
 
 export * from './types';
 export * from './hash';
+export * from './read';
 export * from './store';

@@ -1,9 +1,26 @@
+// The host half of the skill manager: the business-logic service behind the
+// `/skill-manager` RPC channel. It owns the security boundary for networking,
+// filesystem, manifest, hashing, path validation, and mutations, and delegates
+// each transaction to its module — install (#14), update (#16), and uninstall
+// (#17) — which all compose the same manifest (#10) and safe-path (#11)
+// primitives.
+
 import { installSkill, type InstallDeps } from './install';
 import { ManifestStore } from './manifest/store';
 import { PLUGIN_NAME } from './meta';
 import { SkillRoot } from './path-safety';
 import type { SkillsShClient } from './skills-sh';
-import type { CheckUpdatesResult, HealthInfo, InstallRequest, InstallResult, UpdateInput, UpdateResult } from './types';
+import type {
+  CheckUpdatesResult,
+  HealthInfo,
+  InstallRequest,
+  InstallResult,
+  UninstallRequest,
+  UninstallResult,
+  UpdateInput,
+  UpdateResult,
+} from './types';
+import { uninstallSkill } from './uninstall';
 import { UpdateManager } from './update';
 
 export interface SkillManagerServiceOptions {
@@ -14,18 +31,12 @@ export interface SkillManagerServiceOptions {
   client: SkillsShClient;
   /** Injectable clock for deterministic tests. Defaults to `Date.now`. */
   now?: () => number;
-  /** Path-safety boundary seam (tests override to force publish failure). */
+  /** Path-safety boundary seam (tests override to force publish/delete failure). */
   root?: SkillRoot;
-  /** Manifest store seam (tests override to force save failure). */
+  /** Manifest store seam (tests override to force load/save failure). */
   store?: ManifestStore;
 }
 
-/**
- * The host half of the skill manager. It owns the security boundary for
- * networking, filesystem, manifest, hashing, path validation, and mutations.
- * Issue #14 adds the install transaction; Issue #16 adds update detection and
- * the update transaction.
- */
 export class SkillManagerService {
   private readonly version: string;
   private readonly now: () => number;
@@ -70,5 +81,10 @@ export class SkillManagerService {
   /** Apply the latest upstream snapshot to one skill (Issue #16). */
   update(input: UpdateInput): Promise<UpdateResult> {
     return this.updateManager.update(input);
+  }
+
+  /** Remove a plugin-managed skill (Issue #17; destructive, confirmation-gated). */
+  uninstall(input: UninstallRequest): Promise<UninstallResult> {
+    return uninstallSkill(this.deps.root, this.deps.store, input);
   }
 }

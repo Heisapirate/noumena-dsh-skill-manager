@@ -10,19 +10,9 @@
 // This recovery repairs both on the next update check/transaction, going
 // through the same SkillRoot primitives as every other mutation.
 
-import { lstat, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isValidSkillName, type SkillRoot } from '../path-safety';
-
-async function pathExists(p: string): Promise<boolean> {
-  try {
-    await lstat(p);
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw err;
-  }
-}
 
 /**
  * Repair an interrupted replacement. For each `.backup-<slug>` directory under
@@ -45,7 +35,7 @@ export async function recoverInterruptedSwap(root: SkillRoot): Promise<void> {
     const slug = entry.name.slice('.backup-'.length);
     if (!isValidSkillName(slug)) continue;
 
-    if (await pathExists(root.skillDir(slug))) {
+    if ((await root.classifySkill(slug)) !== 'missing') {
       await root.removeBackup(slug).catch(() => {});
     } else {
       await root.restoreBackup(slug).catch(() => {});

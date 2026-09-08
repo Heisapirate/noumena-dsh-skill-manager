@@ -17,7 +17,7 @@
 // Every filesystem mutation goes through the SkillRoot boundary; every failure
 // is normalized to a typed code.
 
-import { localContentHash, ManifestStore } from '../manifest';
+import { computeLocalContentHash, ManifestStore } from '../manifest';
 import type { LocalContentHash, RemoteSourceHash, SkillManifest, SkillManifestEntry } from '../manifest';
 import type { ManifestLoadResult } from '../manifest';
 import { assertSkillName, SkillRoot, type SafePath } from '../path-safety';
@@ -26,7 +26,6 @@ import { classifySource, splitDownloadId, type SkillsShClient } from '../skills-
 import type { SkillSnapshot } from '../skills-sh';
 import type { CheckUpdatesResult, UpdateInfo, UpdateInput, UpdateResult } from '../types';
 import { UpdateError } from './errors';
-import { readDirFiles, readSkillFiles } from './files';
 import { assertSnapshotSafe } from './snapshot';
 import { buildUpdateInfo } from './status';
 import { recoverInterruptedSwap } from './swap';
@@ -83,7 +82,7 @@ export class UpdateManager {
 
       let currentLocalContentHash: LocalContentHash | null = null;
       try {
-        currentLocalContentHash = localContentHash(await readSkillFiles(this.root, slug));
+        currentLocalContentHash = await computeLocalContentHash(this.root.skillDir(slug));
       } catch {
         // Local recompute failed; we cannot assert drift, so it is not reported.
       }
@@ -153,7 +152,7 @@ export class UpdateManager {
     assertSnapshotSafe(this.root, slug, snapshot);
 
     // Drift gate: never silently overwrite local modifications.
-    const currentLocalContentHash = localContentHash(await readSkillFiles(this.root, slug));
+    const currentLocalContentHash = await computeLocalContentHash(this.root.skillDir(slug));
     const drifted = currentLocalContentHash !== entry.localContentHash;
     if (drifted && input.discardLocalChanges !== true) {
       throw new UpdateError(
@@ -190,7 +189,7 @@ export class UpdateManager {
     }
 
     // Fresh local-content hash from the bytes actually staged.
-    const newLocalContentHash = localContentHash(await readDirFiles(this.root, staged));
+    const newLocalContentHash = await computeLocalContentHash(staged);
 
     // Swap: preserve the old installation until the new one is in place.
     try {
