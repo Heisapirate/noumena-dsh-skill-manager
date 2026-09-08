@@ -29,6 +29,18 @@ describe('classifySource', () => {
     expect(classifySource(42)).toBe('well-known');
     expect(classifySource(null)).toBe('well-known');
   });
+
+  it.each([
+    ['a/..'],
+    ['a/.'],
+    ['../a'],
+    ['./a'],
+    ['..'],
+    ['.'],
+    ['a/../b'],
+  ])('classifies a source with a dot segment %j as well-known', (source) => {
+    expect(classifySource(source)).toBe('well-known');
+  });
 });
 
 describe('slugFromId', () => {
@@ -68,5 +80,16 @@ describe('splitDownloadId', () => {
     ['owner/repo/', null],
   ])('rejects malformed id %j', (id, expected) => {
     expect(splitDownloadId(id)).toBe(expected);
+  });
+
+  it.each([
+    ['a/b/..'],
+    ['a/b/.'],
+    ['a/../slug'],
+    ['a/./slug'],
+    ['../a/slug'],
+    ['./a/slug'],
+  ])('rejects a download id with a dot segment %j', (id) => {
+    expect(splitDownloadId(id)).toBeNull();
   });
 });
