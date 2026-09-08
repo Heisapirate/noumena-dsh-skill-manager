@@ -1,6 +1,7 @@
 // Typed, normalized failures for the SkillsShClient adapter. Application code
 // branches on `code`, never on raw fetch errors or response JSON.
 
+/** The normalized failure codes application code branches on. */
 export type SkillsShErrorCode =
   | 'network-unavailable'
   | 'timeout'
@@ -11,6 +12,7 @@ export type SkillsShErrorCode =
   | 'source-unavailable'
   | 'cancelled';
 
+/** Optional normalized metadata carried on a {@link SkillsShError}. */
 export interface SkillsShErrorOptions {
   statusCode?: number;
   retryAfterSeconds?: number;
@@ -43,6 +45,7 @@ export class SkillsShError extends Error {
   }
 }
 
+/** Type guard narrowing an unknown thrown value to {@link SkillsShError}. */
 export function isSkillsShError(err: unknown): err is SkillsShError {
   return err instanceof SkillsShError;
 }

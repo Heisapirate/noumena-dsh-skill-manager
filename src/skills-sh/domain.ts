@@ -35,8 +35,15 @@ export function toPageUrl(id: string): string {
   return `${SKILLS_SH_BASE_URL}/${id}`;
 }
 
+/** A parsed download id: the GitHub `owner/repo/slug` triple. */
+export interface DownloadId {
+  owner: string;
+  repo: string;
+  slug: string;
+}
+
 /** Split a download id `owner/repo/slug`; `null` when the shape is wrong. */
-export function splitDownloadId(id: string): { owner: string; repo: string; slug: string } | null {
+export function splitDownloadId(id: string): DownloadId | null {
   const segments = id.split('/');
   if (segments.length !== 3) return null;
   const [owner, repo, slug] = segments;

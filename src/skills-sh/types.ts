@@ -1,6 +1,6 @@
-// Typed DTOs and the public contract for the SkillsShClient adapter. This is
-// the ONLY code that knows skills.sh endpoint shapes (ADR-0003): application
-// and UI code depend on these types, never on raw response JSON.
+// Typed DTOs and the public contract for the SkillsShClient adapter — the only
+// module that knows skills.sh endpoint shapes (ADR-0003). Application and UI
+// code depend on these types, never on raw response JSON.
 
 /** How a skill originates on skills.sh; drives installability downstream. */
 export type SourceKind = 'github' | 'well-known';

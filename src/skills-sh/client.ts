@@ -1,10 +1,13 @@
 // The production SkillsShClient: an HTTP adapter over the credential-free
-// skills.sh compatibility endpoints. It is the ONLY code that knows endpoint
-// shapes (ADR-0003), performs strict validation, normalizes every failure to a
-// typed SkillsShError, and retries only transient server errors with bounded
-// backoff. All timing/fetch behavior is injectable for deterministic tests.
+// skills.sh compatibility endpoints. It is part of the only module that knows
+// endpoint shapes (ADR-0003): this client owns the URLs, while validation.ts
+// owns the payload field shapes. It performs strict validation, normalizes
+// every failure to a typed SkillsShError, and retries only transient server
+// errors with bounded backoff. All timing/fetch behavior is injectable for
+// deterministic tests.
 
 import { splitDownloadId } from './domain';
+import type { DownloadId } from './domain';
 import { cancelledError, parseRetryAfter, SkillsShError } from './errors';
 import type { RequestOptions, SearchOptions, SkillSearchResult, SkillSnapshot, SkillsShClient } from './types';
 import { validateSearchResponse, validateSnapshotResponse } from './validation';
@@ -20,16 +23,27 @@ const DEFAULT_MIN_QUERY_LENGTH = 2;
 /** Transient upstream statuses worth retrying; 429 and other 4xx/5xx are not. */
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 
+/** Injectable dependencies and tunables for {@link createSkillsShClient}. */
 export interface SkillsShClientOptions {
+  /** skills.sh origin; defaults to `https://skills.sh`. */
   baseUrl?: string;
+  /** Injected fetch; defaults to the global fetch (deterministic tests inject a mock). */
   fetch?: typeof fetch;
+  /** Per-attempt request timeout in ms; defaults to 10s. */
   timeoutMs?: number;
+  /** Max retries for transient 502/503/504; defaults to 2 (3 attempts total). */
   maxRetries?: number;
+  /** Initial backoff delay in ms; defaults to 500. */
   baseDelayMs?: number;
+  /** Backoff ceiling in ms; defaults to 5000. */
   maxDelayMs?: number;
+  /** Minimum query length before a network call is attempted; defaults to 2. */
   minQueryLength?: number;
+  /** Injected sleep for backoff (abort-aware); defaults to a setTimeout-based sleep. */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /** Injected jitter source in [0,1]; defaults to Math.random. */
   random?: () => number;
+  /** Injected clock for Retry-After HTTP-date parsing; defaults to Date.now. */
   now?: () => number;
 }
 
@@ -171,6 +185,7 @@ export class SkillsShHttpClient implements SkillsShClient {
   }
 }
 
+/** Build a {@link SkillsShClient}; the single constructor seam for the adapter. */
 export function createSkillsShClient(options?: SkillsShClientOptions): SkillsShClient {
   return new SkillsShHttpClient(options);
 }
@@ -183,7 +198,7 @@ function buildSearchUrl(baseUrl: string, query: string, options: SearchOptions):
   return `${baseUrl}/api/search?${params.toString()}`;
 }
 
-function buildDownloadUrl(baseUrl: string, parts: { owner: string; repo: string; slug: string }): string {
+function buildDownloadUrl(baseUrl: string, parts: DownloadId): string {
   const { owner, repo, slug } = parts;
   return `${baseUrl}/api/download/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/${encodeURIComponent(slug)}`;
 }

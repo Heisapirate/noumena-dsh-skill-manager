@@ -24,6 +24,18 @@ function sequential(
   }) as FetchFn;
 }
 
+/** Fetch that never resolves and rejects with AbortError when its signal aborts. */
+function abortableFetch(): FetchFn {
+  return ((_input: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener(
+        'abort',
+        () => reject(new DOMException('aborted', 'AbortError')),
+        { once: true },
+      );
+    })) as FetchFn;
+}
+
 const searchBody = {
   skills: [
     {
@@ -113,14 +125,7 @@ describe('SkillsShHttpClient.search', () => {
   });
 
   it('maps a slow request to timeout', async () => {
-    const fetchFn = ((_input: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener(
-          'abort',
-          () => reject(new DOMException('aborted', 'AbortError')),
-          { once: true },
-        );
-      })) as FetchFn;
+    const fetchFn = abortableFetch();
     const client = createSkillsShClient({ fetch: fetchFn, timeoutMs: 10 });
     await expect(client.search('python')).rejects.toMatchObject({ code: 'timeout' });
   });
@@ -238,14 +243,7 @@ describe('SkillsShHttpClient cancellation', () => {
   });
 
   it('rejects an in-flight request as cancelled when the signal aborts', async () => {
-    const fetchFn = ((_input: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener(
-          'abort',
-          () => reject(new DOMException('aborted', 'AbortError')),
-          { once: true },
-        );
-      })) as FetchFn;
+    const fetchFn = abortableFetch();
     const client = createSkillsShClient({ fetch: fetchFn });
     const controller = new AbortController();
     const promise = client.search('python', { signal: controller.signal });

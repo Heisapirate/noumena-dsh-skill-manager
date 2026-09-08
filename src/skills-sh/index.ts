@@ -4,6 +4,7 @@
 export { SkillsShHttpClient, createSkillsShClient } from './client';
 export type { SkillsShClientOptions } from './client';
 export { classifySource, slugFromId, splitDownloadId, toPageUrl, SKILLS_SH_BASE_URL } from './domain';
+export type { DownloadId } from './domain';
 export { isSkillsShError, parseRetryAfter, SkillsShError, cancelledError } from './errors';
 export type { SkillsShErrorCode, SkillsShErrorOptions } from './errors';
 export { extractFrontmatterMetadata } from './frontmatter';
