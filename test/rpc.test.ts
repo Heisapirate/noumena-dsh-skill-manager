@@ -1,14 +1,31 @@
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { apply } from '../src/index';
 import { createRpcHandler } from '../src/rpc';
 import { SkillManagerService } from '../src/service';
+import type { SkillsShClient } from '../src/skills-sh';
 import type { RpcHandler } from '../src/types';
 
 const signal = () => new AbortController().signal;
 
+/** Minimal client stub: the health/ping tests never reach the network. */
+const stubClient: SkillsShClient = {
+  search: async () => [],
+  getSnapshot: async () => {
+    throw new Error('unused');
+  },
+  getDescription: async () => null,
+};
+
 describe('SkillManagerService.health', () => {
   it('returns a typed health response with version and a timestamp', () => {
-    const service = new SkillManagerService({ version: '1.0.0', now: () => 1234 });
+    const service = new SkillManagerService({
+      version: '1.0.0',
+      skillsRoot: join(tmpdir(), 'dsh-unused-skills'),
+      client: stubClient,
+      now: () => 1234,
+    });
     expect(service.health()).toEqual({
       ok: true,
       plugin: 'dsh-skill-manager',
@@ -19,7 +36,12 @@ describe('SkillManagerService.health', () => {
 });
 
 describe('createRpcHandler', () => {
-  const service = new SkillManagerService({ version: '1.0.0', now: () => 1234 });
+  const service = new SkillManagerService({
+    version: '1.0.0',
+    skillsRoot: join(tmpdir(), 'dsh-unused-skills'),
+    client: stubClient,
+    now: () => 1234,
+  });
   const handler = createRpcHandler(service);
 
   it('answers the health endpoint with an ok result', async () => {
@@ -36,7 +58,7 @@ describe('createRpcHandler', () => {
   });
 
   it('returns a typed failure for an unknown endpoint', async () => {
-    const result = await handler('install', {}, signal());
+    const result = await handler('not-a-real-endpoint', {}, signal());
     expect(result).toMatchObject({ ok: false, error: { code: 'not-found' } });
   });
 });
