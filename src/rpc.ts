@@ -3,6 +3,7 @@ import {
   ENDPOINT_DESCRIBE,
   ENDPOINT_HEALTH,
   ENDPOINT_INSTALL,
+  ENDPOINT_LIST,
   ENDPOINT_PING,
   ENDPOINT_SEARCH,
   ENDPOINT_UNINSTALL,
@@ -57,6 +58,9 @@ export function createRpcHandler(service: SkillManagerService): RpcHandler {
       }
       if (endpoint === ENDPOINT_DESCRIBE) {
         return { ok: true, value: await service.describe(readDescribeId(payload), signal) };
+      }
+      if (endpoint === ENDPOINT_LIST) {
+        return { ok: true, value: await service.list() };
       }
       if (endpoint === ENDPOINT_INSTALL) {
         const request = coerceInstallRequest(payload);

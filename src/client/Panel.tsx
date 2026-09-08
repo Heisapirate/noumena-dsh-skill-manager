@@ -8,7 +8,9 @@ import type { CSSProperties } from 'react';
 import { ENDPOINT_HEALTH, RPC_CHANNEL } from '../contract';
 import type { HealthInfo } from '../types';
 import type { ClientConnection } from './connection';
+import { ManagedSkillsSection } from './ManagedSkillsSection';
 import { SearchSection } from './SearchSection';
+import { useManagedSkills } from './useManagedSkills';
 import { useSkillSearch } from './useSkillSearch';
 
 export interface SkillManagerPanelProps {
@@ -28,7 +30,6 @@ const styles: Record<string, CSSProperties> = {
   section: { display: 'flex', flexDirection: 'column', gap: '6px' },
   heading: { fontSize: '13px', fontWeight: 600, margin: 0, textTransform: 'uppercase', letterSpacing: '0.02em' },
   intro: { margin: 0, opacity: 0.85 },
-  placeholder: { margin: 0, opacity: 0.6 },
   statusLine: { margin: 0, display: 'flex', alignItems: 'center', gap: '8px' },
   retry: { alignSelf: 'flex-start', cursor: 'pointer' },
 };
@@ -41,6 +42,7 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
     message: null,
   });
   const search = useSkillSearch(connection);
+  const managed = useManagedSkills(connection);
 
   useEffect(() => {
     let alive = true;
@@ -88,7 +90,7 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
 
       <section style={styles.section} aria-label="Managed skills">
         <h2 style={styles.heading}>Managed skills</h2>
-        <p style={styles.placeholder}>The skills this plugin manages will appear here.</p>
+        <ManagedSkillsSection state={managed.state} onRefresh={managed.refresh} />
       </section>
 
       <section style={styles.section} aria-label="Host connection">

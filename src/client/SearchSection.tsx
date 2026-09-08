@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import type { CSSProperties, ChangeEvent } from 'react';
+import { SkeletonBar, SkeletonStyle } from './Skeleton';
 import type { SearchResultRow, SearchSnapshot } from './search/types';
 
 interface SearchSectionProps {
@@ -56,23 +57,6 @@ const styles: Record<string, CSSProperties> = {
   retry: { cursor: 'pointer' },
 };
 
-/** A subtle shimmer skeleton bar for a description slot still loading. */
-const SKELETON_CSS = `
-.dsh-sm-skeleton {
-  display: inline-block;
-  height: 1em;
-  min-width: 40%;
-  border-radius: 4px;
-  background: rgba(127, 127, 127, 0.25);
-  animation: dsh-sm-shimmer 1.4s ease-in-out infinite;
-}
-@keyframes dsh-sm-shimmer {
-  0% { opacity: 0.5; }
-  50% { opacity: 1; }
-  100% { opacity: 0.5; }
-}
-`;
-
 export function SearchSection({ state, onQueryChange, onRetry }: SearchSectionProps) {
   // Local input mirror so the user can type freely (spaces, in-progress text)
   // while the engine debounces and commits trimmed queries.
@@ -86,7 +70,7 @@ export function SearchSection({ state, onQueryChange, onRetry }: SearchSectionPr
 
   return (
     <div role="search">
-      <style>{SKELETON_CSS}</style>
+      <SkeletonStyle />
       <div style={styles.field}>
         <label htmlFor="skill-manager-search" style={styles.label}>
           Search skills.sh
@@ -172,7 +156,7 @@ function DescriptionSlot({ row }: { row: SearchResultRow }) {
     return <span style={styles.unavailableText}>Description unavailable.</span>;
   }
   // `idle` and `loading` both show a skeleton until the description arrives.
-  return <span className="dsh-sm-skeleton" aria-label="Loading description" role="status" />;
+  return <SkeletonBar label="Loading description" />;
 }
 
 function ResultListSkeleton({ rows }: { rows: number }) {
@@ -181,9 +165,9 @@ function ResultListSkeleton({ rows }: { rows: number }) {
       {Array.from({ length: rows }, (_, index) => (
         <li key={index} style={styles.row} aria-hidden>
           <div style={styles.rowMain}>
-            <span className="dsh-sm-skeleton" style={{ minWidth: '50%' }} />
-            <span className="dsh-sm-skeleton" style={{ minWidth: '30%' }} />
-            <span className="dsh-sm-skeleton" style={{ minWidth: '60%' }} />
+            <SkeletonBar minWidth="50%" />
+            <SkeletonBar minWidth="30%" />
+            <SkeletonBar minWidth="60%" />
           </div>
         </li>
       ))}
