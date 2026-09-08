@@ -20,7 +20,11 @@ export function classifySource(source: unknown): SourceKind {
   const segments = value.split('/');
   if (segments.length !== 2) return 'well-known';
   const [owner, repo] = segments;
-  if (owner === '' || repo === '' || owner.includes('.')) return 'well-known';
+  // Reject empty and dot segments. `owner.includes('.')` already covers `.` and
+  // `..` for the owner, but the repo side deliberately allows dots
+  // (`repo.with.dot` is a valid GitHub repo name), so it must reject `.`/`..`
+  // explicitly — a `..` repo is a traversal-shaped, non-GitHub source.
+  if (owner === '' || repo === '' || owner.includes('.') || repo === '.' || repo === '..') return 'well-known';
   return 'github';
 }
 
@@ -48,5 +52,8 @@ export function splitDownloadId(id: string): DownloadId | null {
   if (segments.length !== 3) return null;
   const [owner, repo, slug] = segments;
   if (!owner || !repo || !slug) return null;
+  // Reject dot segments: `.`/`..` are traversal-shaped, never a real GitHub
+  // owner/repo/slug, and must not survive into a download URL or provenance.
+  if ([owner, repo, slug].some((segment) => segment === '.' || segment === '..')) return null;
   return { owner, repo, slug };
 }

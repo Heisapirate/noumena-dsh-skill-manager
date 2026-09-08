@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { localContentHash } from '../../src/manifest';
+import { localContentHash, manifestPath } from '../../src/manifest';
 import { ManifestStore } from '../../src/manifest';
 import type {
   LocalContentHash,
@@ -135,4 +135,9 @@ export async function installSkill(
 /** Read a skill file's contents from the installed directory. */
 export function readInstalled(root: string, slug: string, relPath: string): Promise<string> {
   return readFile(join(root, slug, ...relPath.split('/')), 'utf8');
+}
+
+/** Corrupt the on-disk manifest in place (a truncated hand edit). */
+export async function writeCorruptManifest(root: string): Promise<void> {
+  await writeFile(manifestPath(root), '{ not json', 'utf8');
 }
