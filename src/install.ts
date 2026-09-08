@@ -11,11 +11,10 @@
 // manifest update → cleanup. On any failure before publish the prior state is
 // untouched; after publish, a manifest-save failure rolls the publish back.
 
-import { lstat, readFile } from 'node:fs/promises';
+import { isPermissionErrno } from './errors';
 import {
-  localContentHash,
+  computeLocalContentHash,
   MANIFEST_SCHEMA_VERSION,
-  type LocalContentHash,
   type RemoteSourceHash,
   type SkillManifest,
   type SkillManifestEntry,
@@ -125,7 +124,7 @@ export async function installSkill(deps: InstallDeps, request: InstallRequest, s
     throw toInstallError(err);
   }
   const skillDir = deps.root.skillDir(slug);
-  const targetExists = await pathExists(skillDir);
+  const targetExists = (await deps.root.classifySkill(slug)) !== 'missing';
   const managedEntry = loaded.manifest.skills[slug];
   if (targetExists && !managedEntry) {
     throw new InstallError(
@@ -157,7 +156,7 @@ export async function installSkill(deps: InstallDeps, request: InstallRequest, s
 
   // 6. Fresh local-content hash, recomputed from the bytes actually written to
   //    the staging directory (the directory that becomes the installed skill).
-  const contentHash = await computeInstalledContentHash(deps.root, staged, snapshot.files);
+  const contentHash = await computeLocalContentHash(staged);
 
   // 7. Publish (atomic rename; backup-swap on overwrite).
   try {
@@ -297,40 +296,11 @@ function toInstallError(err: unknown): Error {
     // filesystem-error / not-found / not-a-directory: a write-time failure.
     return new InstallError('install-partial-failure', err.message, { path: err.path, cause: err });
   }
-  const code = (err as NodeJS.ErrnoException)?.code;
   const message = err instanceof Error ? err.message : String(err);
-  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') {
+  if (isPermissionErrno(err)) {
     return new InstallError('filesystem-permission', message, { cause: err });
   }
   return new InstallError('install-partial-failure', message, { cause: err });
-}
-
-/**
- * Recompute the deterministic local-content hash from the bytes on disk (the
- * staged directory that is about to be published), not from the in-memory
- * snapshot. This keeps the recorded hash truthful to the installed content
- * even if materialization ever normalizes or transforms bytes.
- */
-async function computeInstalledContentHash(
-  root: SkillRoot,
-  staged: SafePath,
-  files: readonly { path: string; contents: string }[],
-): Promise<LocalContentHash> {
-  const installed: Array<{ path: string; contents: string }> = [];
-  for (const file of files) {
-    installed.push({ path: file.path, contents: await readFile(root.relativeFile(staged, file.path), 'utf8') });
-  }
-  return localContentHash(installed);
-}
-
-async function pathExists(p: string): Promise<boolean> {
-  try {
-    await lstat(p);
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
-    throw err;
-  }
 }
 
 // Rollback helpers are best-effort: they never mask the original failure.

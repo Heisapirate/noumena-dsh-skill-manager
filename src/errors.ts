@@ -31,6 +31,12 @@ export class SkillManagerError extends Error {
   }
 }
 
+/** True when a Node filesystem error is a permission/read-only denial. */
+export function isPermissionErrno(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return code === 'EACCES' || code === 'EPERM' || code === 'EROFS';
+}
+
 /**
  * Map a raw Node filesystem error to a typed `SkillManagerError`, so filesystem
  * failures outside the safe-path boundary (manifest reads, hash recomputation)
@@ -38,8 +44,7 @@ export class SkillManagerError extends Error {
  * internal error.
  */
 export function toFilesystemError(err: unknown, path: string): SkillManagerError {
-  const code = (err as NodeJS.ErrnoException)?.code;
-  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') {
+  if (isPermissionErrno(err)) {
     return new SkillManagerError('filesystem-permission', `permission denied on ${path}`, { path });
   }
   const message = err instanceof Error ? err.message : String(err);
