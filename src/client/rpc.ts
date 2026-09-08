@@ -2,22 +2,36 @@
 // `/skill-manager` endpoint names; the search engine and UI depend on the
 // narrow `SkillManagerApi`, never on the connection or on skills.sh details.
 
-import { ENDPOINT_DESCRIBE, ENDPOINT_LIST, ENDPOINT_SEARCH, RPC_CHANNEL } from '../contract';
+import {
+  ENDPOINT_DESCRIBE,
+  ENDPOINT_INSTALL,
+  ENDPOINT_LIST,
+  ENDPOINT_SEARCH,
+  ENDPOINT_UNINSTALL,
+  ENDPOINT_UPDATE,
+  RPC_CHANNEL,
+} from '../contract';
 import type {
   DescribeResponse,
+  InstallResult,
   ManagedSkill,
   ManagedSkillsResult,
   RpcResult,
   SearchResponse,
   SkillSearchResult,
+  UninstallResult,
+  UpdateResult,
 } from '../types';
 import type { ClientConnection } from './connection';
 
-/** The search + managed-skills surface the client orchestration and UI consume. */
+/** The search + managed-skills + mutation surface the client consumes. */
 export interface SkillManagerApi {
   search(query: string, signal?: AbortSignal): Promise<SkillSearchResult[]>;
   describe(id: string, signal?: AbortSignal): Promise<string | null>;
   list(): Promise<ManagedSkill[]>;
+  install(id: string, overwrite?: boolean): Promise<InstallResult>;
+  update(id: string, discardLocalChanges?: boolean): Promise<UpdateResult>;
+  uninstall(id: string, options?: { confirm?: boolean; discardLocalChanges?: boolean }): Promise<UninstallResult>;
 }
 
 /** A normalized failure crossing the RPC boundary. */
@@ -58,6 +72,30 @@ export function createSkillManagerApi(connection: ClientConnection): SkillManage
         {},
       );
       return unwrap(result).skills;
+    },
+    async install(id, overwrite) {
+      const result = await connection.rpc.call<InstallResult>(RPC_CHANNEL, ENDPOINT_INSTALL, {
+        id,
+        ...(overwrite !== undefined ? { overwrite } : {}),
+      });
+      return unwrap(result);
+    },
+    async update(id, discardLocalChanges) {
+      const result = await connection.rpc.call<UpdateResult>(RPC_CHANNEL, ENDPOINT_UPDATE, {
+        id,
+        ...(discardLocalChanges !== undefined ? { discardLocalChanges } : {}),
+      });
+      return unwrap(result);
+    },
+    async uninstall(id, options) {
+      const result = await connection.rpc.call<UninstallResult>(RPC_CHANNEL, ENDPOINT_UNINSTALL, {
+        id,
+        ...(options?.confirm !== undefined ? { confirm: options.confirm } : {}),
+        ...(options?.discardLocalChanges !== undefined
+          ? { discardLocalChanges: options.discardLocalChanges }
+          : {}),
+      });
+      return unwrap(result);
     },
   };
 }

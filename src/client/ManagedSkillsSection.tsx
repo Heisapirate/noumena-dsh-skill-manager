@@ -1,17 +1,22 @@
-// The managed-skills section (Issue #15). It renders only the view model the
-// hook supplies: loading, empty, error, and per-skill rows with provenance and
-// status badges. Update/uninstall buttons are stable action seams for the later
-// #16/#17/#18 wiring — they are rendered disabled so a click can never perform
-// a destructive action from this section today.
+// The managed-skills section (Issue #15) with actionable update/uninstall
+// (Issue #18). It renders only the view model the hook supplies plus the
+// mutation store's scoped feedback; confirmation copy and action availability
+// come from `managed/view.ts`, so no status/gating decision lives here.
 
+import { useState } from 'react';
 import type { CSSProperties } from 'react';
+import type { ActionKind, ActionState } from './actions/types';
 import type { ManagedSkillBadge, ManagedSkillViewModel } from './managed/view';
+import { uninstallConfirmation, updateConfirmation } from './managed/view';
 import { SkeletonBar, SkeletonStyle } from './Skeleton';
 import type { ManagedSkillsState } from './useManagedSkills';
 
 interface ManagedSkillsSectionProps {
   state: ManagedSkillsState;
   onRefresh: () => void;
+  actionState: (kind: ActionKind, target: string) => ActionState;
+  onUpdate: (id: string, discardLocalChanges?: boolean) => void;
+  onUninstall: (slug: string, options?: { confirm?: boolean; discardLocalChanges?: boolean }) => void;
 }
 
 const styles: Record<string, CSSProperties> = {
@@ -32,8 +37,21 @@ const styles: Record<string, CSSProperties> = {
   meta: { fontSize: '12px', opacity: 0.8 },
   status: { fontSize: '13px' },
   badges: { display: 'flex', flexWrap: 'wrap', gap: '4px' },
-  actions: { display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0 },
-  action: { cursor: 'not-allowed' },
+  actions: { display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0, alignItems: 'flex-end' },
+  button: { cursor: 'pointer' },
+  disabledButton: { cursor: 'default', opacity: 0.6 },
+  confirm: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: '6px',
+    fontSize: '12px',
+    maxWidth: '240px',
+  },
+  confirmText: { margin: 0, fontSize: '12px', opacity: 0.85, textAlign: 'right' },
+  confirmButtons: { display: 'flex', gap: '6px' },
+  success: { fontSize: '12px', color: '#1e7e34', fontWeight: 600 },
+  errorText: { margin: 0, fontSize: '12px', color: '#b02a37', textAlign: 'right' },
   message: { margin: 0, fontSize: '13px' },
   errorBox: { display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' },
   retry: { cursor: 'pointer' },
@@ -54,7 +72,7 @@ const BADGE_COLOR: Record<ManagedSkillBadge['tone'], string> = {
   muted: '#5a5a5a',
 };
 
-export function ManagedSkillsSection({ state, onRefresh }: ManagedSkillsSectionProps) {
+export function ManagedSkillsSection({ state, onRefresh, actionState, onUpdate, onUninstall }: ManagedSkillsSectionProps) {
   return (
     <div>
       <SkeletonStyle />
@@ -68,11 +86,13 @@ export function ManagedSkillsSection({ state, onRefresh }: ManagedSkillsSectionP
       {state.status === 'loading' && <SkeletonRows rows={2} />}
 
       {state.status === 'error' && (
-        <div style={styles.errorBox}>
-          <p style={styles.message}>Could not load managed skills: {state.error}</p>
-          <button type="button" style={styles.retry} onClick={onRefresh}>
-            Retry
-          </button>
+        <div style={styles.errorBox} role="alert">
+          <p style={styles.message}>Could not load managed skills: {state.error.message}</p>
+          {state.error.action === 'retry' && (
+            <button type="button" style={styles.retry} onClick={onRefresh}>
+              Retry
+            </button>
+          )}
         </div>
       )}
 
@@ -85,7 +105,14 @@ export function ManagedSkillsSection({ state, onRefresh }: ManagedSkillsSectionP
       {state.status === 'ready' && state.skills.length > 0 && (
         <ul style={styles.list} role="list">
           {state.skills.map((skill) => (
-            <ManagedSkillRow key={skill.slug} skill={skill} />
+            <ManagedSkillRow
+              key={skill.slug}
+              skill={skill}
+              updateAction={actionState('update', skill.id)}
+              uninstallAction={actionState('uninstall', skill.slug)}
+              onUpdate={onUpdate}
+              onUninstall={onUninstall}
+            />
           ))}
         </ul>
       )}
@@ -93,7 +120,19 @@ export function ManagedSkillsSection({ state, onRefresh }: ManagedSkillsSectionP
   );
 }
 
-function ManagedSkillRow({ skill }: { skill: ManagedSkillViewModel }) {
+interface ManagedSkillRowProps {
+  skill: ManagedSkillViewModel;
+  updateAction: ActionState;
+  uninstallAction: ActionState;
+  onUpdate: (id: string, discardLocalChanges?: boolean) => void;
+  onUninstall: (slug: string, options?: { confirm?: boolean; discardLocalChanges?: boolean }) => void;
+}
+
+function ManagedSkillRow({ skill, updateAction, uninstallAction, onUpdate, onUninstall }: ManagedSkillRowProps) {
+  const [confirming, setConfirming] = useState<'update' | 'uninstall' | null>(null);
+  const updateConfirm = updateConfirmation(skill);
+  const uninstallConfirm = uninstallConfirmation(skill);
+
   return (
     <li style={styles.row} role="listitem">
       <div style={styles.rowMain}>
@@ -111,18 +150,153 @@ function ManagedSkillRow({ skill }: { skill: ManagedSkillViewModel }) {
         )}
       </div>
 
-      {/* Stable action seams for the later #16/#17/#18 wiring. Disabled so no
-          destructive action can fire from this section today; each seam is
-          bound to its managed identifier (`id`/`slug`), never a path. */}
       <div style={styles.actions}>
-        <button type="button" style={styles.action} disabled aria-label={`Update ${skill.id}`}>
-          Update
-        </button>
-        <button type="button" style={styles.action} disabled aria-label={`Uninstall ${skill.slug}`}>
-          Uninstall
-        </button>
+        <UpdateAction
+          skill={skill}
+          action={updateAction}
+          confirming={confirming === 'update'}
+          confirmation={updateConfirm}
+          onStart={() => setConfirming('update')}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            setConfirming(null);
+            onUpdate(skill.id, updateConfirm.discardsLocalChanges);
+          }}
+        />
+        <UninstallAction
+          skill={skill}
+          action={uninstallAction}
+          confirming={confirming === 'uninstall'}
+          confirmation={uninstallConfirm}
+          onStart={() => setConfirming('uninstall')}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            setConfirming(null);
+            onUninstall(skill.slug, {
+              confirm: true,
+              discardLocalChanges: uninstallConfirm.discardsLocalChanges,
+            });
+          }}
+        />
       </div>
     </li>
+  );
+}
+
+interface UpdateActionProps {
+  skill: ManagedSkillViewModel;
+  action: ActionState;
+  confirming: boolean;
+  confirmation: ReturnType<typeof updateConfirmation>;
+  onStart: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function UpdateAction({ skill, action, confirming, confirmation, onStart, onCancel, onConfirm }: UpdateActionProps) {
+  if (action.status === 'pending') {
+    return (
+      <button type="button" style={styles.disabledButton} disabled aria-busy>
+        Updating…
+      </button>
+    );
+  }
+
+  if (confirming) {
+    return (
+      <div style={styles.confirm} role="group" aria-label={`Confirm update ${skill.slug}`}>
+        <p style={styles.confirmText}>{confirmation.message}</p>
+        <div style={styles.confirmButtons}>
+          <button type="button" style={styles.button} onClick={onConfirm}>
+            {confirmation.confirmLabel}
+          </button>
+          <button type="button" style={styles.button} onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (action.status === 'success') {
+    return (
+      <span role="status" style={styles.success}>
+        ✓ {action.message}
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        style={skill.canUpdate ? styles.button : styles.disabledButton}
+        disabled={!skill.canUpdate}
+        onClick={onStart}
+        aria-label={`Update ${skill.slug}`}
+      >
+        Update
+      </button>
+      {action.status === 'error' && <p style={styles.errorText}>{action.error?.message}</p>}
+    </>
+  );
+}
+
+interface UninstallActionProps {
+  skill: ManagedSkillViewModel;
+  action: ActionState;
+  confirming: boolean;
+  confirmation: ReturnType<typeof uninstallConfirmation>;
+  onStart: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function UninstallAction({ skill, action, confirming, confirmation, onStart, onCancel, onConfirm }: UninstallActionProps) {
+  if (action.status === 'pending') {
+    return (
+      <button type="button" style={styles.disabledButton} disabled aria-busy>
+        Uninstalling…
+      </button>
+    );
+  }
+
+  if (confirming) {
+    return (
+      <div style={styles.confirm} role="group" aria-label={`Confirm uninstall ${skill.slug}`}>
+        <p style={styles.confirmText}>{confirmation.message}</p>
+        <div style={styles.confirmButtons}>
+          <button type="button" style={styles.button} onClick={onConfirm}>
+            {confirmation.confirmLabel}
+          </button>
+          <button type="button" style={styles.button} onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (action.status === 'success') {
+    return (
+      <span role="status" style={styles.success}>
+        ✓ {action.message}
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        style={styles.button}
+        onClick={onStart}
+        aria-label={`Uninstall ${skill.slug}`}
+      >
+        Uninstall
+      </button>
+      {action.status === 'error' && <p style={styles.errorText}>{action.error?.message}</p>}
+    </>
   );
 }
 

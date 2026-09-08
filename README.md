@@ -1,13 +1,14 @@
 # dsh-skill-manager
 
 A DeepSeek Harness (DSH) external plugin that adds a **DSH Skill Manager** page
-to the DSH WebUI settings. From it, a user will be able to search skills.sh,
-install and update skills, and manage the plugin-managed skills on this machine.
+to the DSH WebUI settings. From it, a user searches skills.sh, installs and
+updates skills, and manages the plugin-managed skills on this machine.
 
-> **Status: install shipped (Issue #14).** The production plugin skeleton
-> (Issue #9) plus the domain/manifest, path-safety, and SkillsShClient
-> foundations (#10–#12) and the atomic install transaction (#14). Search,
-> update, uninstall, and the managed-list UI land in later tickets (#15–#18).
+> **Status: full feature set shipped (Issues #9–#18).** Search (#13), the atomic
+> install transaction (#14), the managed-skills list (#15), update detection and
+> transaction (#16), uninstall (#17), and the error-state/interaction polish
+> (#18) are implemented end-to-end on top of the plugin foundation (#9), the
+> domain/manifest (#10), path safety (#11), and the SkillsShClient adapter (#12).
 
 ## Install
 
@@ -21,25 +22,27 @@ Then start the WebUI:
 dsh web
 ```
 
-Open **Settings → DSH Skill Manager**. The page shows the plugin title, a short
-explanation, and a live **Host connection** status answered by the host half
-over the `/skill-manager` RPC channel.
+Open **Settings → DSH Skill Manager**. The page shows search, the managed-skills
+list with update/uninstall actions, and a live **Host connection** status
+answered by the host half over the `/skill-manager` RPC channel.
 
-## What's implemented (Issue #9)
+## What's implemented
 
 - **Package contract** — `dsh.bundle.patch` → `cordis.patch.yml`,
   `dsh.client` (`platform: "web"` + the rc.1 service injects), and
   `exports["."]` / `exports["./client"]` / `exports["./package.json"]`.
 - **Host half** (`src/index.ts`) — a cordis entry that registers the
-  `/skill-manager` Connection RPC channel and answers a typed `health`/`ping`
-  probe plus the `install` endpoint (Issue #14).
-- **Install transaction** (`src/install.ts`) — source/snapshot validation,
-  staged writes through the path-safety boundary, atomic publish (backup-swap
-  on overwrite), and a manifest update written only after publish succeeds,
-  with full rollback on failure.
+  `/skill-manager` Connection RPC channel and answers the typed `health`/`ping`,
+  `search`, `describe`, `install`, `list`, `checkUpdates`, `update`, and
+  `uninstall` endpoints.
+- **Transactions** — install (#14), update (#16), and uninstall (#17) compose
+  the manifest (#10), path-safety (#11), and SkillsShClient (#12) boundaries;
+  every write is staged, atomically published, and rolled back on failure, and
+  local modifications are never silently overwritten.
 - **Client half** (`src/client/`) — a `settings.section` page titled
-  **DSH Skill Manager**, with stable containers for the future search and
-  managed-skills sections and a live host-connectivity status over real RPC.
+  **DSH Skill Manager**: debounced search with progressive description
+  hydration, per-row install, the managed-skills list with update/uninstall,
+  and the full loading/empty/error/confirmation/success state set (#18).
 - **rc.1 build contract** — a tsdown reproduction of the DSH `clientBundle`
   preset: host `lib/index.js` (ESM) + `lib/client.js` (the
   `window.__ModuleLoader__.load` closure), `fixedExtension: false`, and a
@@ -112,10 +115,10 @@ The built `lib/` is committed so `dsh plugin add` needs no post-install build.
 
 ## Known limitations / deferred work
 
-- Search, update, uninstall, and the managed-list UI are not implemented yet —
-  those are Issues #15–#18. Install (Issue #14) is implemented end-to-end.
 - The well-known (non-GitHub) source boundary surfaces as **unavailable source**
   on install (see ADR-0004).
+- Description hydration approximates "visible rows" with the current result set
+  rather than a viewport-gated `IntersectionObserver` (see `src/client/search/engine.ts`).
 - Real-browser rendering of the settings section and the browser→host→browser
-  RPC round trip are verified manually (see the runtime-smoke evidence in the
-  PR for Issue #9).
+  RPC round trip are verified manually (see the runtime-smoke evidence in each
+  feature PR).

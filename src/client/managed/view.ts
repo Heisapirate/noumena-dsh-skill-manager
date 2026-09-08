@@ -1,7 +1,8 @@
-// Pure view-model mapping for the managed-skills section (Issue #15). The host
-// returns a `ManagedSkill` carrying the accepted `UpdateStatus`; this module is
-// the single place that maps a status to user-facing copy and badges, so the
-// React renderer only displays the view model and never re-derives status.
+// Pure view-model mapping for the managed-skills section (Issue #15, #18). The
+// host returns a `ManagedSkill` carrying the accepted `UpdateStatus` plus the
+// two independent change flags; this module is the single place that maps a
+// status to user-facing copy, badges, and action availability, so the React
+// renderer only displays the view model and never re-derives status or gating.
 
 import type { ManagedSkill, UpdateStatus } from '../../types';
 
@@ -28,6 +29,24 @@ export interface ManagedSkillViewModel {
   statusLabel: string;
   /** Badges to render; may be empty. */
   badges: ManagedSkillBadge[];
+  /** Recomputed `localContentHash` differs from the recorded one (local drift). */
+  localModified: boolean;
+  /** Latest upstream `remoteSourceHash` differs from the recorded one. */
+  updateAvailable: boolean;
+  /** Whether an update action is offered (only for update-available states). */
+  canUpdate: boolean;
+  /** Whether an uninstall action is offered (always for a managed skill). */
+  canUninstall: boolean;
+}
+
+/** A destructive-action confirmation, derived once and rendered as inline UI. */
+export interface ManagedActionConfirmation {
+  /** One-sentence consequence of confirming. */
+  message: string;
+  /** Label for the confirming button. */
+  confirmLabel: string;
+  /** Whether confirming discards local modifications (extra acknowledgment). */
+  discardsLocalChanges: boolean;
 }
 
 /** Map a host `ManagedSkill` to its user-facing view model. */
@@ -40,6 +59,32 @@ export function toManagedSkillViewModel(skill: ManagedSkill): ManagedSkillViewMo
     installedAt: skill.installedAt,
     statusLabel: presentation.label,
     badges: presentation.badges,
+    localModified: skill.localModified,
+    updateAvailable: skill.updateAvailable,
+    canUpdate: skill.updateAvailable,
+    canUninstall: true,
+  };
+}
+
+/** The confirmation shown before an update replaces a managed skill's files. */
+export function updateConfirmation(vm: ManagedSkillViewModel): ManagedActionConfirmation {
+  return {
+    message: vm.localModified
+      ? 'Updating will replace this skill and discard your local changes.'
+      : 'Updating will replace this skill with the latest version.',
+    confirmLabel: vm.localModified ? 'Update & discard changes' : 'Update',
+    discardsLocalChanges: vm.localModified,
+  };
+}
+
+/** The confirmation shown before an uninstall removes a managed skill. */
+export function uninstallConfirmation(vm: ManagedSkillViewModel): ManagedActionConfirmation {
+  return {
+    message: vm.localModified
+      ? 'Uninstalling will remove this skill and discard your local changes.'
+      : 'Uninstalling will remove this skill from this machine.',
+    confirmLabel: vm.localModified ? 'Uninstall & discard changes' : 'Uninstall',
+    discardsLocalChanges: vm.localModified,
   };
 }
 

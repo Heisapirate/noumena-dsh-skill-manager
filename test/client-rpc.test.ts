@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { ClientConnection } from '../src/client/connection';
 import { createSkillManagerApi, SkillManagerRpcError } from '../src/client/rpc';
-import { ENDPOINT_DESCRIBE, ENDPOINT_LIST, ENDPOINT_SEARCH, RPC_CHANNEL } from '../src/contract';
-import type { ManagedSkill, RpcResult, SkillSearchResult } from '../src/types';
+import {
+  ENDPOINT_DESCRIBE,
+  ENDPOINT_INSTALL,
+  ENDPOINT_LIST,
+  ENDPOINT_SEARCH,
+  ENDPOINT_UNINSTALL,
+  ENDPOINT_UPDATE,
+  RPC_CHANNEL,
+} from '../src/contract';
+import type { InstallResult, ManagedSkill, RpcResult, SkillSearchResult, UninstallResult, UpdateResult } from '../src/types';
 
 const githubResult: SkillSearchResult = {
   id: 'microsoft/azure-skills/python-appservice-deploy',
@@ -113,5 +121,92 @@ describe('createSkillManagerApi', () => {
     );
     await api.search('python', controller.signal);
     expect(received).toBe(controller.signal);
+  });
+
+  it('installs over the channel with the id and overwrite flag', async () => {
+    const installResult: InstallResult = {
+      slug: 'slug',
+      source: 'owner/repo',
+      remoteSourceHash: 'opaque',
+      localContentHash: 'a'.repeat(64),
+      installedAt: '2024-01-01T00:00:00.000Z',
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    };
+    const calls: Array<{ endpoint: string; payload: unknown }> = [];
+    const api = createSkillManagerApi(
+      connection(async (_c, endpoint, payload) => {
+        calls.push({ endpoint, payload });
+        return { ok: true, value: installResult };
+      }),
+    );
+    await expect(api.install('owner/repo/slug', true)).resolves.toEqual(installResult);
+    expect(calls).toEqual([{ endpoint: ENDPOINT_INSTALL, payload: { id: 'owner/repo/slug', overwrite: true } }]);
+  });
+
+  it('updates over the channel with the id and discard flag', async () => {
+    const updateResult: UpdateResult = {
+      slug: 'slug',
+      source: 'owner/repo',
+      remoteSourceHash: 'opaque',
+      localContentHash: 'b'.repeat(64),
+      updatedAt: '2024-01-01T00:00:00.000Z',
+      discardedLocalChanges: true,
+      applied: true,
+    };
+    const calls: Array<{ endpoint: string; payload: unknown }> = [];
+    const api = createSkillManagerApi(
+      connection(async (_c, endpoint, payload) => {
+        calls.push({ endpoint, payload });
+        return { ok: true, value: updateResult };
+      }),
+    );
+    await expect(api.update('owner/repo/slug', true)).resolves.toEqual(updateResult);
+    expect(calls).toEqual([
+      { endpoint: ENDPOINT_UPDATE, payload: { id: 'owner/repo/slug', discardLocalChanges: true } },
+    ]);
+  });
+
+  it('uninstalls over the channel with the slug and confirmation flags', async () => {
+    const uninstallResult: UninstallResult = { ok: true };
+    const calls: Array<{ endpoint: string; payload: unknown }> = [];
+    const api = createSkillManagerApi(
+      connection(async (_c, endpoint, payload) => {
+        calls.push({ endpoint, payload });
+        return { ok: true, value: uninstallResult };
+      }),
+    );
+    await expect(
+      api.uninstall('slug', { confirm: true, discardLocalChanges: true }),
+    ).resolves.toEqual(uninstallResult);
+    expect(calls).toEqual([
+      {
+        endpoint: ENDPOINT_UNINSTALL,
+        payload: { id: 'slug', confirm: true, discardLocalChanges: true },
+      },
+    ]);
+  });
+
+  it('omits undefined confirmation flags from the wire payload', async () => {
+    const calls: Array<{ endpoint: string; payload: unknown }> = [];
+    const api = createSkillManagerApi(
+      connection(async (_c, endpoint, payload) => {
+        calls.push({ endpoint, payload });
+        return { ok: true, value: { ok: true } };
+      }),
+    );
+    await api.uninstall('slug');
+    expect(calls).toEqual([{ endpoint: ENDPOINT_UNINSTALL, payload: { id: 'slug' } }]);
+  });
+
+  it('surfaces a host failure for a mutation as a typed SkillManagerRpcError', async () => {
+    const api = createSkillManagerApi(
+      connection(async () => ({
+        ok: false,
+        error: { code: 'local-modification-conflict', message: 'x', details: {} },
+      })),
+    );
+    const err = await api.update('owner/repo/slug').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SkillManagerRpcError);
+    expect(err).toMatchObject({ code: 'local-modification-conflict' });
   });
 });
