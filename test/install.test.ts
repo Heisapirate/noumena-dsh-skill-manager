@@ -423,6 +423,19 @@ describe('installSkill — staged transaction, failure cleanup, and rollback', (
     expect(await exists(join(root, '.system', 'skill-manager', '.staging', SLUG))).toBe(false);
   });
 
+  it('clears a stale staging directory left by an interrupted attempt', async () => {
+    const root = await tempRoot();
+    const staged = join(root, '.system', 'skill-manager', '.staging', SLUG);
+    await mkdir(staged, { recursive: true });
+    await writeFile(join(staged, 'stale.txt'), 'stale');
+
+    await installSkill(makeDeps(root, mockClient()), { id: ID });
+
+    // The published skill contains only the snapshot files — never stale staging debris.
+    expect(await exists(join(root, SLUG, 'stale.txt'))).toBe(false);
+    expect(await exists(join(root, SLUG, 'SKILL.md'))).toBe(true);
+  });
+
   it('propagates a network failure before any write and leaves nothing behind', async () => {
     const root = await tempRoot();
     const client = mockClient({

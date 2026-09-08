@@ -1,4 +1,4 @@
-import { installSkill } from './install';
+import { installSkill, type InstallDeps } from './install';
 import { ManifestStore } from './manifest/store';
 import { PLUGIN_NAME } from './meta';
 import { SkillRoot } from './path-safety';
@@ -23,16 +23,17 @@ export interface SkillManagerServiceOptions {
 export class SkillManagerService {
   private readonly version: string;
   private readonly now: () => number;
-  private readonly root: SkillRoot;
-  private readonly store: ManifestStore;
-  private readonly client: SkillsShClient;
+  private readonly deps: InstallDeps;
 
   constructor(options: SkillManagerServiceOptions) {
     this.version = options.version;
     this.now = options.now ?? Date.now;
-    this.root = new SkillRoot(options.skillsRoot);
-    this.store = new ManifestStore(options.skillsRoot);
-    this.client = options.client;
+    this.deps = {
+      client: options.client,
+      root: new SkillRoot(options.skillsRoot),
+      store: new ManifestStore(options.skillsRoot),
+      now: this.now,
+    };
   }
 
   /** Typed health/status probe proving the host is alive behind the RPC boundary. */
@@ -47,10 +48,6 @@ export class SkillManagerService {
 
   /** Install one GitHub-backed skill as an atomic transaction (Issue #14). */
   install(request: InstallRequest, signal?: AbortSignal): Promise<InstallResult> {
-    return installSkill(
-      { client: this.client, root: this.root, store: this.store, now: this.now },
-      request,
-      signal,
-    );
+    return installSkill(this.deps, request, signal);
   }
 }

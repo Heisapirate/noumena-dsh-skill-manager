@@ -11,16 +11,17 @@
 // manifest update → cleanup. On any failure before publish the prior state is
 // untouched; after publish, a manifest-save failure rolls the publish back.
 
-import { lstat } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import {
   localContentHash,
   MANIFEST_SCHEMA_VERSION,
+  type LocalContentHash,
   type RemoteSourceHash,
   type SkillManifest,
   type SkillManifestEntry,
 } from './manifest';
 import type { ManifestLoadResult, ManifestStore } from './manifest/store';
-import { isValidSkillName, PathSafetyError, type SkillRoot } from './path-safety';
+import { isValidSkillName, PathSafetyError, type SafePath, type SkillRoot } from './path-safety';
 import {
   classifySource,
   extractFrontmatterMetadata,
@@ -141,9 +142,12 @@ export async function installSkill(deps: InstallDeps, request: InstallRequest, s
     );
   }
 
-  // 5. Stage to `.system/skill-manager/.staging/<slug>/`.
-  let staged;
+  // 5. Stage to `.system/skill-manager/.staging/<slug>/`. Clear any stale
+  //    staging directory from a prior interrupted attempt first so the staged
+  //    content is exactly this snapshot (the publish never carries debris).
+  let staged: SafePath;
   try {
+    await deps.root.removeStagingDir(slug);
     staged = await deps.root.createStagingDir(slug);
     await deps.root.materializeFiles(staged, snapshot.files);
   } catch (err) {
@@ -151,8 +155,9 @@ export async function installSkill(deps: InstallDeps, request: InstallRequest, s
     throw toInstallError(err);
   }
 
-  // 6. Fresh local-content hash over the installed content.
-  const lch = localContentHash(snapshot.files);
+  // 6. Fresh local-content hash, recomputed from the bytes actually written to
+  //    the staging directory (the directory that becomes the installed skill).
+  const contentHash = await computeInstalledContentHash(deps.root, staged, snapshot.files);
 
   // 7. Publish (atomic rename; backup-swap on overwrite).
   try {
@@ -170,7 +175,7 @@ export async function installSkill(deps: InstallDeps, request: InstallRequest, s
     source,
     slug,
     remoteSourceHash: snapshot.remoteSourceHash as RemoteSourceHash,
-    localContentHash: lch,
+    localContentHash: contentHash,
     installedAt: targetExists && managedEntry ? managedEntry.installedAt : timestamp,
     updatedAt: timestamp,
   };
@@ -189,8 +194,12 @@ export async function installSkill(deps: InstallDeps, request: InstallRequest, s
   }
 
   // 9. Commit: drop the backup (overwrite) and clear the staging directory.
-  if (targetExists) await deps.root.removeBackup(slug);
-  await deps.root.removeStagingDir(slug);
+  // Best-effort: the install is already durable (skill published + manifest
+  // saved), and a stale `.system` staging/backup entry is invisible to DSH and
+  // cleaned up by the next install, so a cleanup hiccup must not fail a
+  // completed install.
+  if (targetExists) await safeRemoveBackup(deps.root, slug);
+  await safeRemoveStaging(deps.root, slug);
 
   return {
     slug,
@@ -296,6 +305,24 @@ function toInstallError(err: unknown): Error {
   return new InstallError('install-partial-failure', message, { cause: err });
 }
 
+/**
+ * Recompute the deterministic local-content hash from the bytes on disk (the
+ * staged directory that is about to be published), not from the in-memory
+ * snapshot. This keeps the recorded hash truthful to the installed content
+ * even if materialization ever normalizes or transforms bytes.
+ */
+async function computeInstalledContentHash(
+  root: SkillRoot,
+  staged: SafePath,
+  files: readonly { path: string; contents: string }[],
+): Promise<LocalContentHash> {
+  const installed: Array<{ path: string; contents: string }> = [];
+  for (const file of files) {
+    installed.push({ path: file.path, contents: await readFile(root.relativeFile(staged, file.path), 'utf8') });
+  }
+  return localContentHash(installed);
+}
+
 async function pathExists(p: string): Promise<boolean> {
   try {
     await lstat(p);
@@ -328,5 +355,13 @@ async function safeRemoveSkillDir(root: SkillRoot, slug: string): Promise<void> 
     await root.removeSkillDir(slug);
   } catch {
     /* the original error is authoritative */
+  }
+}
+
+async function safeRemoveBackup(root: SkillRoot, slug: string): Promise<void> {
+  try {
+    await root.removeBackup(slug);
+  } catch {
+    /* post-commit cleanup must not fail a completed install */
   }
 }
