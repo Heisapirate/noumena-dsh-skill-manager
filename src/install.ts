@@ -39,6 +39,7 @@ export type InstallErrorCode =
   | 'unsafe-path'
   | 'duplicate-install'
   | 'foreign-target'
+  | 'manifest-corruption'
   | 'filesystem-permission'
   | 'install-partial-failure';
 
@@ -122,6 +123,16 @@ export async function installSkill(deps: InstallDeps, request: InstallRequest, s
     loaded = await deps.store.load();
   } catch (err) {
     throw toInstallError(err);
+  }
+  // A corrupt manifest cannot prove ownership (is the target foreign or
+  // managed?), so installing must refuse rather than silently rebuild a fresh
+  // manifest and orphan the provenance of every other managed skill. This
+  // matches the update (#16) and uninstall (#17) transactions.
+  if (loaded.status === 'corrupt') {
+    throw new InstallError(
+      'manifest-corruption',
+      `cannot install: the manifest is corrupt (${loaded.corruption?.reason ?? 'unknown'})`,
+    );
   }
   const skillDir = deps.root.skillDir(slug);
   const targetExists = (await deps.root.classifySkill(slug)) !== 'missing';

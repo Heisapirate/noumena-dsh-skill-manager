@@ -5,7 +5,7 @@ import { localContentHash, ManifestStore } from '../../src/manifest';
 import { SkillRoot } from '../../src/path-safety';
 import { UpdateManager } from '../../src/update';
 import type { UpdateManagerOptions } from '../../src/update';
-import { cleanupRoots, FakeSkillsShClient, installSkill, readInstalled, snapshot, tempSkillsRoot } from './helpers';
+import { cleanupRoots, FakeSkillsShClient, installSkill, readInstalled, snapshot, tempSkillsRoot, writeCorruptManifest } from './helpers';
 
 const SLUG = 'find-skills';
 const ID = `owner/repo/${SLUG}`;
@@ -176,6 +176,19 @@ describe('UpdateManager.checkUpdates', () => {
 
     expect((await manifestSkills(root))[SLUG]).toEqual(entry);
   });
+
+  it('reports no skills (never crashes) when the manifest is corrupt', async () => {
+    const root = await tempSkillsRoot();
+    const client = new FakeSkillsShClient();
+    await installSkill(root, SLUG);
+    await writeCorruptManifest(root);
+
+    const { updates } = await manager(root, client).checkUpdates();
+
+    expect(updates).toEqual([]);
+    // The corrupt manifest is left for the user to repair, never rewritten.
+    expect((await new ManifestStore(root).load()).status).toBe('corrupt');
+  });
 });
 
 describe('UpdateManager.update', () => {
@@ -228,6 +241,39 @@ describe('UpdateManager.update', () => {
 
     await expect(manager(root, client).update({ id: 'example.com/foo/bar' })).rejects.toMatchObject({
       code: 'source-unavailable',
+    });
+  });
+
+  it('refuses to update when the manifest is corrupt, leaving the skill intact', async () => {
+    const root = await tempSkillsRoot();
+    const client = new FakeSkillsShClient();
+    await installSkill(root, SLUG);
+    client.setSnapshot(ID, snapshot(ID, 'opaque-v2', NEW_FILES));
+    await writeCorruptManifest(root);
+
+    await expect(manager(root, client).update({ id: ID })).rejects.toMatchObject({
+      code: 'manifest-corruption',
+    });
+
+    expect(await readInstalled(root, SLUG, 'README.md')).toBe('# Readme\n');
+    expect((await new ManifestStore(root).load()).status).toBe('corrupt');
+  });
+
+  it('leaves the installed skill intact when the snapshot fetch fails', async () => {
+    const root = await tempSkillsRoot();
+    const client = new FakeSkillsShClient();
+    await installSkill(root, SLUG);
+    client.setError(ID, 'source-unavailable', 'skill source not found');
+
+    await expect(manager(root, client).update({ id: ID })).rejects.toMatchObject({
+      code: 'source-unavailable',
+    });
+
+    // Nothing was staged, swapped, or re-recorded.
+    expect(await readInstalled(root, SLUG, 'README.md')).toBe('# Readme\n');
+    expect((await manifestSkills(root))[SLUG].remoteSourceHash).toBe('opaque-v1');
+    await expect(readdir(join(root, '.system', 'skill-manager', '.staging'))).rejects.toMatchObject({
+      code: 'ENOENT',
     });
   });
 

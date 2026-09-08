@@ -17,6 +17,7 @@ import {
   installSkill,
   snapshot,
   tempSkillsRoot,
+  writeCorruptManifest,
 } from '../update/helpers';
 
 const SLUG = 'find-skills';
@@ -105,6 +106,15 @@ describe('SkillManagerService.list', () => {
     const client = new FakeSkillsShClient();
     await installSkill(root, SLUG);
     await rm(join(root, SLUG), { recursive: true, force: true });
+
+    await expect(listSkills(root, client)).resolves.toEqual([]);
+  });
+
+  it('returns an empty list (never crashes) when the manifest is corrupt', async () => {
+    const root = await tempSkillsRoot();
+    const client = new FakeSkillsShClient();
+    await installSkill(root, SLUG);
+    await writeCorruptManifest(root);
 
     await expect(listSkills(root, client)).resolves.toEqual([]);
   });

@@ -46,3 +46,21 @@ describe('client bundle purity', () => {
     expect(unknown).toEqual([]);
   });
 });
+
+describe('vitest discovery excludes nested worktrees', () => {
+  it('locks the .worktrees exclusion and extends (not replaces) the defaults', () => {
+    const config = readFileSync(join(repoRoot, 'vitest.config.mjs'), 'utf8');
+    // Drop comment-only lines so a commented-out exclusion cannot satisfy this
+    // lock — the tokens must live in executable config, not in a stale comment.
+    const active = config
+      .split(/\r?\n/)
+      .filter((line) => !line.trimStart().startsWith('//'))
+      .join('\n');
+    // Nested git worktrees are independent checkouts; the coordinator/main
+    // worktree must only run its own suite, so discovery must never descend
+    // into them. This also keeps the test runner off sibling worktrees (e.g.
+    // the Issue #18 checkout).
+    expect(active).toContain("'**/.worktrees/**'");
+    expect(active).toContain('...configDefaults.exclude');
+  });
+});

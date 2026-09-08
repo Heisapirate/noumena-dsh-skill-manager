@@ -327,6 +327,51 @@ describe('installSkill — duplicate and foreign handling', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 4b. Manifest integrity
+// ---------------------------------------------------------------------------
+
+describe('installSkill — manifest integrity', () => {
+  it('refuses to install when the manifest is corrupt (cannot prove ownership)', async () => {
+    const root = await tempRoot();
+    // A corrupt manifest already exists (e.g. a truncated hand edit).
+    const manifestFile = join(root, '.system', 'skill-manager', 'manifest.json');
+    await mkdir(join(root, '.system', 'skill-manager'), { recursive: true });
+    await writeFile(manifestFile, '{ not json', 'utf8');
+
+    await expect(installSkill(makeDeps(root), { id: ID })).rejects.toMatchObject({
+      code: 'manifest-corruption',
+    });
+
+    // Nothing is written: the corrupt manifest is preserved verbatim and no
+    // skill directory or staging debris was created. Installing must never
+    // silently rebuild a corrupt manifest and orphan other managed entries.
+    expect(await readFile(manifestFile, 'utf8')).toBe('{ not json');
+    expect(await exists(join(root, SLUG))).toBe(false);
+    expect(await readdir(root)).toEqual(['.system']);
+  });
+
+  it('refuses with manifest-corruption before the foreign gate, leaving foreign content intact', async () => {
+    const root = await tempRoot();
+    const manifestFile = join(root, '.system', 'skill-manager', 'manifest.json');
+    await mkdir(join(root, '.system', 'skill-manager'), { recursive: true });
+    await writeFile(manifestFile, '{ not json', 'utf8');
+    // A foreign skill already occupies the target path — exactly the
+    // ownership question a corrupt manifest cannot answer, so the corruption
+    // gate must fire before the foreign/duplicate gate.
+    const foreignDir = join(root, SLUG);
+    await mkdir(foreignDir, { recursive: true });
+    await writeFile(join(foreignDir, 'precious.txt'), 'user data');
+
+    await expect(installSkill(makeDeps(root), { id: ID })).rejects.toMatchObject({
+      code: 'manifest-corruption',
+    });
+
+    expect(await readFile(join(foreignDir, 'precious.txt'), 'utf8')).toBe('user data');
+    expect(await readFile(manifestFile, 'utf8')).toBe('{ not json');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 5. Staged transaction & rollback
 // ---------------------------------------------------------------------------
 
