@@ -122,13 +122,14 @@ architecture doc (see §10).
 
 ## 11. Remaining risks
 
-- Browser-level proof (settings page renders, RPC wire round trip) needs a real
-  browser — not observable in this sandbox.
-- `github:` (vs `link:`) install and `dsh web` on a fresh clone need a machine with
-  working git TLS + pnpm `allowBuilds` for any `prepare`-build plugin.
 - The exact rc.1 `PLATFORM_MODULES` table (client `external` list) was taken from the
   rc.6 reference; verify against rc.1 before production.
 - skills.sh anonymous limits remain unknown (§8).
+- The GitHub install here required `git` on PATH and the OpenSSL TLS backend; on a
+  normal machine the default `schannel` backend works, so that is a sandbox artifact,
+  not a production requirement.
+- Production install/build still assumes a working `pnpm` + Node toolchain; if the
+  plugin later gains a `prepare` script, the profile's `allowBuilds` must include it.
 
 ## 12. Commands to reproduce
 
@@ -138,9 +139,10 @@ pnpm run build                                   # -> lib/index.js + lib/client.
 pnpm exec tsx --help >/dev/null 2>&1 || true     # (tsx optional)
 node docs/prototype/verify-host.mjs              # host RPC handler + channel asserts
 
-# install into a throwaway DSH home and boot
+# install into a throwaway DSH home and boot (github: path was verified end-to-end)
 export DSH_HOME="$PWD/.proto-dsh-home"
-node <dsh>/lib/bin.js plugin --profile web add "link:$PWD"
+export PATH="/path/to/Git/cmd:$PATH"               # git must be on PATH for pnpm
+node <dsh>/lib/bin.js plugin --profile web add "github:Heisapirate/noumena-dsh-skill-manager#ec28f73"
 node <dsh>/lib/bin.js web --port 4123 --no-open   # watch for: [dsh-skill-manager] host apply …
 
 # clean removal
@@ -151,3 +153,28 @@ node docs/prototype/experiment-skills.mjs
 node docs/prototype/experiment-hash-probe.mjs
 node docs/prototype/experiment-benchmark.mjs
 ```
+
+## 13. Real-browser verification (manual, confirmed)
+
+Verified by the user in a real Windows browser (DSH 0.1.2-rc.1, isolated `DSH_HOME`):
+
+- the **DSH Skill Manager Prototype** `settings.section` is visible and selectable;
+- the prototype page renders;
+- the automatic `ping` RPC completes and the browser visibly shows
+  `DSH Skill Manager Prototype — ping ok: {"ok":true,"version":"prototype","now":<epoch-ms>}`.
+
+Final verified chain (end-to-end, all confirmed):
+1. exact GitHub commit install succeeded (`github:Heisapirate/noumena-dsh-skill-manager#ec28f73`);
+2. DSH Web boot succeeded;
+3. external client bundle loaded;
+4. `settings.section` rendered in a real browser;
+5. browser → host RPC succeeded;
+6. host → browser response rendered successfully.
+
+Clean removal re-verified: `dsh plugin remove dsh-skill-manager` reverts
+`dsh.profile.bundles` to base + web-app, and a fresh boot emits no plugin log — DSH
+Web returns to a clean state.
+
+Hash model (unchanged, confirmed): `remoteSourceHash` is an opaque skills.sh update
+fingerprint; `localContentHash` is the plugin-computed deterministic drift fingerprint.
+They are separate concepts and must never be compared as equivalent hashes.
