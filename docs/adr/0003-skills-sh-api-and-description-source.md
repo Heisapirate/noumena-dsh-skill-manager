@@ -1,0 +1,5 @@
+# skills.sh is consumed through the anonymous search + download endpoints
+
+The plugin reads skills.sh through exactly two anonymous endpoints: `GET /api/search` for keyword search (returns `id` = `owner/repo/slug`, `name`/`skillId`, `installs`, `source`) and `GET /api/download/{owner}/{repo}/{slug}` for a skill's full file snapshot plus its `hash` (a SHA-256 over the file contents). Neither search surface exposes a `description`, so descriptions are obtained by parsing the `SKILL.md` YAML frontmatter returned by the download endpoint.
+
+This is a deliberate choice against the documented `/api/v1/*` API — which requires a Vercel OIDC bearer token that a locally installed plugin cannot mint — and against scraping the skills.sh HTML page, which is fragile and yields no `hash` or files. **Consequences:** the search list shows name/source/installs immediately and fetches descriptions eagerly, one `/api/download` call per result with a bounded concurrency and an in-memory cache keyed by slug; the same call also pre-warms the install payload and the `hash` used for update detection.
