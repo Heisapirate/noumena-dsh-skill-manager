@@ -9,6 +9,7 @@ import { localContentHash } from '../src/manifest/hash';
 import type { RemoteSourceHash } from '../src/manifest';
 import { createRpcHandler } from '../src/rpc';
 import { SkillManagerService } from '../src/service';
+import type { SkillsShClient } from '../src/skills-sh';
 import type { RpcHandler } from '../src/types';
 
 const remote = (s: string): RemoteSourceHash => s as RemoteSourceHash;
@@ -26,9 +27,23 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((r) => rm(r, { recursive: true, force: true })));
 });
 
+/** Minimal client stub: the health/ping/uninstall tests never reach the network. */
+const stubClient: SkillsShClient = {
+  search: async () => [],
+  getSnapshot: async () => {
+    throw new Error('unused');
+  },
+  getDescription: async () => null,
+};
+
 describe('SkillManagerService.health', () => {
   it('returns a typed health response with version and a timestamp', () => {
-    const service = new SkillManagerService({ version: '1.0.0', skillsRoot: join(tmpdir(), 'x'), now: () => 1234 });
+    const service = new SkillManagerService({
+      version: '1.0.0',
+      skillsRoot: join(tmpdir(), 'dsh-unused-skills'),
+      client: stubClient,
+      now: () => 1234,
+    });
     expect(service.health()).toEqual({
       ok: true,
       plugin: 'dsh-skill-manager',
@@ -39,9 +54,15 @@ describe('SkillManagerService.health', () => {
 });
 
 describe('createRpcHandler', () => {
+  const service = new SkillManagerService({
+    version: '1.0.0',
+    skillsRoot: join(tmpdir(), 'dsh-unused-skills'),
+    client: stubClient,
+    now: () => 1234,
+  });
+  const handler = createRpcHandler(service);
+
   it('answers the health endpoint with an ok result', async () => {
-    const service = new SkillManagerService({ version: '1.0.0', skillsRoot: join(tmpdir(), 'x'), now: () => 1234 });
-    const handler = createRpcHandler(service);
     const result = await handler('health', {}, signal());
     expect(result).toEqual({
       ok: true,
@@ -50,16 +71,12 @@ describe('createRpcHandler', () => {
   });
 
   it('answers ping as a liveness alias of health', async () => {
-    const service = new SkillManagerService({ version: '1.0.0', skillsRoot: join(tmpdir(), 'x'), now: () => 1234 });
-    const handler = createRpcHandler(service);
     const result = await handler('ping', {}, signal());
     expect(result).toEqual({ ok: true, value: expect.objectContaining({ ok: true }) });
   });
 
   it('returns a typed failure for an unknown endpoint', async () => {
-    const service = new SkillManagerService({ version: '1.0.0', skillsRoot: join(tmpdir(), 'x'), now: () => 1234 });
-    const handler = createRpcHandler(service);
-    const result = await handler('install', {}, signal());
+    const result = await handler('not-a-real-endpoint', {}, signal());
     expect(result).toMatchObject({ ok: false, error: { code: 'not-found' } });
   });
 
@@ -69,8 +86,10 @@ describe('createRpcHandler', () => {
     await writeSkillFiles(root, 'find-skills', files);
     await writeManifestEntry(root, 'find-skills');
 
-    const handler = createRpcHandler(new SkillManagerService({ version: '1.0.0', skillsRoot: root }));
-    const result = await handler('uninstall', { id: 'find-skills', confirm: true }, signal());
+    const uninstallHandler = createRpcHandler(
+      new SkillManagerService({ version: '1.0.0', skillsRoot: root, client: stubClient }),
+    );
+    const result = await uninstallHandler('uninstall', { id: 'find-skills', confirm: true }, signal());
 
     expect(result).toEqual({ ok: true, value: { ok: true } });
   });
@@ -79,15 +98,19 @@ describe('createRpcHandler', () => {
     const root = await tempRoot();
     await writeSkillFiles(root, 'foreign-skill', [{ path: 'SKILL.md', contents: 'x' }]);
 
-    const handler = createRpcHandler(new SkillManagerService({ version: '1.0.0', skillsRoot: root }));
-    const result = await handler('uninstall', { id: 'foreign-skill', confirm: true }, signal());
+    const uninstallHandler = createRpcHandler(
+      new SkillManagerService({ version: '1.0.0', skillsRoot: root, client: stubClient }),
+    );
+    const result = await uninstallHandler('uninstall', { id: 'foreign-skill', confirm: true }, signal());
 
     expect(result).toMatchObject({ ok: false, error: { code: 'foreign-skill' } });
   });
 
   it('normalizes an invalid skill name to the path-safety error code', async () => {
-    const handler = createRpcHandler(new SkillManagerService({ version: '1.0.0', skillsRoot: join(tmpdir(), 'x') }));
-    const result = await handler('uninstall', { id: '../escape', confirm: true }, signal());
+    const uninstallHandler = createRpcHandler(
+      new SkillManagerService({ version: '1.0.0', skillsRoot: join(tmpdir(), 'x'), client: stubClient }),
+    );
+    const result = await uninstallHandler('uninstall', { id: '../escape', confirm: true }, signal());
 
     expect(result).toMatchObject({ ok: false, error: { code: 'invalid-skill-name' } });
   });

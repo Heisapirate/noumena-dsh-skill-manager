@@ -1,41 +1,64 @@
 // The host half of the skill manager: the business-logic service behind the
-// `/skill-manager` RPC channel. Issue #17 adds the uninstall transaction
-// (production spec §11), built on the manifest ownership model (#10) and the
-// safe-path boundary (#11). It reuses those primitives rather than duplicating
-// their containment, ownership, or errno-mapping rules.
+// `/skill-manager` RPC channel. It owns the security boundary for networking,
+// filesystem, manifest, hashing, path validation, and mutations. Issue #14 adds
+// the install transaction; Issue #16 adds update detection + the update
+// transaction; Issue #17 adds the uninstall transaction (production spec §11).
+// All three compose the same manifest (#10) and safe-path (#11) primitives.
 
 import { SkillManagerError, toFilesystemError } from './errors';
+import { installSkill, type InstallDeps } from './install';
 import { computeLocalContentHash } from './manifest/read';
 import { ManifestStore } from './manifest/store';
 import type { ManifestLoadResult } from './manifest/store';
 import type { LocalContentHash, SkillManifest } from './manifest/types';
 import { PLUGIN_NAME } from './meta';
 import { PathSafetyError, SkillRoot } from './path-safety';
-import type { HealthInfo, UninstallRequest, UninstallResult } from './types';
+import type { SkillsShClient } from './skills-sh';
+import type {
+  CheckUpdatesResult,
+  HealthInfo,
+  InstallRequest,
+  InstallResult,
+  UninstallRequest,
+  UninstallResult,
+  UpdateInput,
+  UpdateResult,
+} from './types';
+import { UpdateManager } from './update';
 
 export interface SkillManagerServiceOptions {
   version: string;
-  /** Absolute path of the DSH user skills root (`$DSH_HOME/skills`). */
+  /** The DSH user skills root (`$DSH_HOME/skills`); the only directory mutated. */
   skillsRoot: string;
+  /** The skills.sh adapter that owns snapshot retrieval and its typed errors. */
+  client: SkillsShClient;
   /** Injectable clock for deterministic tests. Defaults to `Date.now`. */
   now?: () => number;
-  /** Test seam: the safe-path boundary. Defaults to a `SkillRoot` over `skillsRoot`. */
-  skillRoot?: SkillRoot;
-  /** Test seam: the manifest store. Defaults to a `ManifestStore` over `skillsRoot`. */
-  manifestStore?: ManifestStore;
+  /** Path-safety boundary seam (tests override to force publish/delete failure). */
+  root?: SkillRoot;
+  /** Manifest store seam (tests override to force load/save failure). */
+  store?: ManifestStore;
 }
 
 export class SkillManagerService {
   private readonly version: string;
   private readonly now: () => number;
-  private readonly skillRoot: SkillRoot;
-  private readonly manifestStore: ManifestStore;
+  private readonly deps: InstallDeps;
+  private readonly updateManager: UpdateManager;
 
   constructor(options: SkillManagerServiceOptions) {
     this.version = options.version;
     this.now = options.now ?? Date.now;
-    this.skillRoot = options.skillRoot ?? new SkillRoot(options.skillsRoot);
-    this.manifestStore = options.manifestStore ?? new ManifestStore(options.skillsRoot);
+    const root = options.root ?? new SkillRoot(options.skillsRoot);
+    const store = options.store ?? new ManifestStore(options.skillsRoot);
+    this.deps = { client: options.client, root, store, now: this.now };
+    this.updateManager = new UpdateManager({
+      skillsRoot: options.skillsRoot,
+      client: options.client,
+      now: this.now,
+      root,
+      store,
+    });
   }
 
   /** Typed health/status probe proving the host is alive behind the RPC boundary. */
@@ -46,6 +69,21 @@ export class SkillManagerService {
       version: this.version,
       now: this.now(),
     };
+  }
+
+  /** Install one GitHub-backed skill as an atomic transaction (Issue #14). */
+  install(request: InstallRequest, signal?: AbortSignal): Promise<InstallResult> {
+    return installSkill(this.deps, request, signal);
+  }
+
+  /** Update detection for every plugin-managed skill (Issue #16). */
+  checkUpdates(): Promise<CheckUpdatesResult> {
+    return this.updateManager.checkUpdates();
+  }
+
+  /** Apply the latest upstream snapshot to one skill (Issue #16). */
+  update(input: UpdateInput): Promise<UpdateResult> {
+    return this.updateManager.update(input);
   }
 
   /**
@@ -59,9 +97,11 @@ export class SkillManagerService {
       throw new SkillManagerError('invalid-request', 'uninstall requires a string "id"', {});
     }
     const { id } = input;
+    const root = this.deps.root;
+    const store = this.deps.store;
 
     // 1. Validate the skill name and resolve the target strictly inside the root.
-    const skillDir = this.skillRoot.skillDir(id);
+    const skillDir = root.skillDir(id);
 
     // 2. Load + reconcile the manifest; refuse when it cannot be trusted.
     const load = await this.loadManifest();
@@ -82,7 +122,7 @@ export class SkillManagerService {
         // content — refuse rather than silently dropping the entry. Genuinely
         // missing ⇒ already uninstalled: persist the reconciled manifest and
         // succeed idempotently.
-        const kind = await this.skillRoot.classifySkill(id);
+        const kind = await root.classifySkill(id);
         if (kind === 'symlink') {
           throw new PathSafetyError(
             'symlink-escape',
@@ -102,7 +142,7 @@ export class SkillManagerService {
 
       // Not recorded in the manifest at all: refuse, whether the path exists
       // (foreign) or not (unknown).
-      const kind = await this.skillRoot.classifySkill(id);
+      const kind = await root.classifySkill(id);
       if (kind !== 'missing') {
         throw new SkillManagerError(
           'foreign-skill',
@@ -131,7 +171,7 @@ export class SkillManagerService {
     // 6. Delete the directory first, then remove the manifest entry atomically.
     //    If the directory delete fails the entry stays (no ambiguity); if the
     //    manifest save fails the entry is dropped by reconcile on next load.
-    await this.skillRoot.removeSkillDir(id);
+    await root.removeSkillDir(id);
     await this.persistManifest(
       this.withoutEntry(load.manifest, id),
       'removed the skill directory but failed to update the manifest',
@@ -141,25 +181,25 @@ export class SkillManagerService {
 
   /** Recompute the local-content hash and compare to the recorded value. */
   private async hasLocalDrift(id: string, recorded: LocalContentHash): Promise<boolean> {
-    const kind = await this.skillRoot.classifySkill(id);
+    const kind = await this.deps.root.classifySkill(id);
     // Vanished between load and drift check: nothing left to protect.
     if (kind === 'missing') return false;
     // Replaced by a symlink/junction (or a plain file) → local modification.
     if (kind !== 'directory') return true;
-    return (await computeLocalContentHash(this.skillRoot.skillDir(id))) !== recorded;
+    return (await computeLocalContentHash(this.deps.root.skillDir(id))) !== recorded;
   }
 
   private async loadManifest(): Promise<ManifestLoadResult> {
     try {
-      return await this.manifestStore.load();
+      return await this.deps.store.load();
     } catch (err) {
-      throw toFilesystemError(err, this.skillRoot.path);
+      throw toFilesystemError(err, this.deps.root.path);
     }
   }
 
   private async persistManifest(manifest: SkillManifest, failureMessage: string): Promise<void> {
     try {
-      await this.manifestStore.save(manifest);
+      await this.deps.store.save(manifest);
     } catch (err) {
       throw new SkillManagerError('uninstall-partial-failure', failureMessage, {
         cause: err instanceof Error ? err.message : String(err),

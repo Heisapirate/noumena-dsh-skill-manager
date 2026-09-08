@@ -26,6 +26,8 @@ import {
 } from '../src/manifest';
 import { PathSafetyError, SkillRoot } from '../src/path-safety';
 import { SkillManagerService } from '../src/service';
+import type { SkillManagerServiceOptions } from '../src/service';
+import type { SkillsShClient } from '../src/skills-sh';
 
 const JUNCTION_SUPPORTED: boolean = (() => {
   try {
@@ -105,8 +107,16 @@ async function installSkill(root: string, slug: string, files: SkillFile[] = SNA
   await store.save({ version: load.manifest.version, skills });
 }
 
-function makeService(root: string, overrides: Partial<ConstructorParameters<typeof SkillManagerService>[0]> = {}): SkillManagerService {
-  return new SkillManagerService({ version: '1.0.0', skillsRoot: root, ...overrides });
+const stubClient: SkillsShClient = {
+  search: async () => [],
+  getSnapshot: async () => {
+    throw new Error('unused');
+  },
+  getDescription: async () => null,
+};
+
+function makeService(root: string, overrides: Partial<SkillManagerServiceOptions> = {}): SkillManagerService {
+  return new SkillManagerService({ version: '1.0.0', skillsRoot: root, client: stubClient, ...overrides });
 }
 
 describe('SkillManagerService.uninstall', () => {
@@ -184,7 +194,7 @@ describe('SkillManagerService.uninstall', () => {
       }
     }
 
-    const service = makeService(root, { manifestStore: new LoadFailingStore(root) });
+    const service = makeService(root, { store: new LoadFailingStore(root) });
     await expect(service.uninstall({ id: 'find-skills', confirm: true })).rejects.toMatchObject({
       code: 'filesystem-permission',
     });
@@ -258,7 +268,7 @@ describe('SkillManagerService.uninstall', () => {
       }
     }
 
-    const service = makeService(root, { skillRoot: new FailingSkillRoot(root) });
+    const service = makeService(root, { root: new FailingSkillRoot(root) });
     await expect(service.uninstall({ id: 'find-skills', confirm: true })).rejects.toMatchObject({
       code: 'filesystem-permission',
     });
@@ -279,7 +289,7 @@ describe('SkillManagerService.uninstall', () => {
       }
     }
 
-    const service = makeService(root, { manifestStore: new FailingManifestStore(root) });
+    const service = makeService(root, { store: new FailingManifestStore(root) });
     await expect(service.uninstall({ id: 'find-skills', confirm: true })).rejects.toMatchObject({
       code: 'uninstall-partial-failure',
     });

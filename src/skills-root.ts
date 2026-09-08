@@ -1,14 +1,15 @@
-// Resolve the DSH user skills root — the only directory this plugin writes into.
-// Per CONTEXT.md, the skills root is `$DSH_HOME/skills` (default `~/.dsh/skills`).
+// Resolve the DSH user skills root (`$DSH_HOME/skills`, default `~/.dsh/skills`).
+// This is the only directory the plugin writes into (CONTEXT.md, ADR-0001) and
+// the resolution is host-only — the browser never sees it.
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-/** Resolve `$DSH_HOME/skills` (default `~/.dsh/skills`). Injectable for tests. */
-export function resolveSkillsRoot(
-  env: NodeJS.ProcessEnv = process.env,
-  home: string = homedir(),
-): string {
-  const dshHome = env.DSH_HOME && env.DSH_HOME.trim() !== '' ? env.DSH_HOME.trim() : join(home, '.dsh');
-  return join(dshHome, 'skills');
+/**
+ * Resolve the skills root from the environment. `DSH_HOME` (the same variable
+ * DSH's own runtime uses) overrides the `~/.dsh` default.
+ */
+export function resolveSkillsRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const home = env.DSH_HOME?.trim() || join(homedir(), '.dsh');
+  return join(home, 'skills');
 }
