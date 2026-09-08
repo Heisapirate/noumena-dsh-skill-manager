@@ -9,7 +9,7 @@ import { ENDPOINT_HEALTH, RPC_CHANNEL } from '../contract';
 import type { HealthInfo } from '../types';
 import type { ClientConnection } from './connection';
 import { ManagedSkillsSection } from './ManagedSkillsSection';
-import { presentThrown } from './copy';
+import { presentError, presentThrown } from './copy';
 import { SearchSection } from './SearchSection';
 import { useManagedSkills } from './useManagedSkills';
 import { useSkillActions } from './useSkillActions';
@@ -68,7 +68,7 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
           setStatus({
             state: 'unavailable',
             health: null,
-            message: presentThrown({ code: result.error.code }).message,
+            message: presentError(result.error.code).message,
           });
         }
       })

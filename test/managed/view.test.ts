@@ -103,9 +103,9 @@ describe('toManagedSkillViewModel — action availability (Issue #18)', () => {
     expect(toManagedSkillViewModel(skill({ status: 'remote-check-failure' })).canUpdate).toBe(false);
   });
 
-  it('always offers uninstall for a managed skill', () => {
-    expect(toManagedSkillViewModel(skill()).canUninstall).toBe(true);
-    expect(toManagedSkillViewModel(skill({ status: 'source-unavailable' })).canUninstall).toBe(true);
+  it('preserves the local drift flag for confirmation copy', () => {
+    expect(toManagedSkillViewModel(skill()).localModified).toBe(false);
+    expect(toManagedSkillViewModel(skill({ status: 'locally-modified', localModified: true })).localModified).toBe(true);
   });
 });
 

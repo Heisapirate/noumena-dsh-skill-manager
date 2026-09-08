@@ -5,6 +5,13 @@
 
 import { useState } from 'react';
 import type { CSSProperties, ChangeEvent } from 'react';
+import {
+  actionStyles,
+  BusyButton,
+  ConfirmPanel,
+  ErrorNote,
+  SuccessLabel,
+} from './actions/controls';
 import type { ActionKind, ActionState } from './actions/types';
 import { SkeletonBar, SkeletonStyle } from './Skeleton';
 import { presentError } from './copy';
@@ -69,20 +76,7 @@ const styles: Record<string, CSSProperties> = {
     whiteSpace: 'nowrap',
   },
   actions: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 },
-  button: { cursor: 'pointer' },
-  disabledButton: { cursor: 'default', opacity: 0.6 },
-  confirm: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    gap: '6px',
-    fontSize: '12px',
-    maxWidth: '220px',
-  },
-  confirmText: { margin: 0, fontSize: '12px', opacity: 0.85, textAlign: 'right' },
-  success: { fontSize: '12px', color: '#1e7e34', fontWeight: 600 },
-  error: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' },
-  errorText: { margin: 0, fontSize: '12px', color: '#b02a37', textAlign: 'right' },
+  actionRow: { display: 'flex', alignItems: 'center', gap: '6px' },
   message: { margin: 0, fontSize: '13px' },
   errorBox: { display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' },
   retry: { cursor: 'pointer' },
@@ -170,7 +164,6 @@ interface ResultRowProps {
 
 function ResultRow({ row, managedSlugs, action, onInstall }: ResultRowProps) {
   const [confirming, setConfirming] = useState(false);
-  const decision = searchRowAction(row, managedSlugs);
 
   return (
     <li style={styles.row} role="listitem">
@@ -186,112 +179,126 @@ function ResultRow({ row, managedSlugs, action, onInstall }: ResultRowProps) {
         <DescriptionSlot row={row} />
       </div>
 
-      <div style={styles.actions}>
-        <InstallAction
-          row={row}
-          decision={decision}
-          action={action}
-          confirming={confirming}
-          onStartConfirm={() => setConfirming(true)}
-          onCancelConfirm={() => setConfirming(false)}
-          onConfirm={() => {
-            setConfirming(false);
-            onInstall(row.id, true);
-          }}
-          onInstall={() => onInstall(row.id, false)}
-        />
-      </div>
+      <InstallAction
+        row={row}
+        managedSlugs={managedSlugs}
+        action={action}
+        confirming={confirming}
+        onStartConfirm={() => setConfirming(true)}
+        onCancelConfirm={() => setConfirming(false)}
+        onConfirmOverwrite={() => {
+          setConfirming(false);
+          onInstall(row.id, true);
+        }}
+        onInstall={() => onInstall(row.id, false)}
+      />
     </li>
   );
 }
 
 interface InstallActionProps {
   row: SearchResultRow;
-  decision: ReturnType<typeof searchRowAction>;
+  managedSlugs: ReadonlySet<string>;
   action: ActionState;
   confirming: boolean;
   onStartConfirm: () => void;
   onCancelConfirm: () => void;
-  onConfirm: () => void;
+  onConfirmOverwrite: () => void;
   onInstall: () => void;
 }
 
-function InstallAction(props: InstallActionProps) {
-  const { row, decision, action, confirming, onStartConfirm, onCancelConfirm, onConfirm, onInstall } = props;
+function InstallAction({
+  row,
+  managedSlugs,
+  action,
+  confirming,
+  onStartConfirm,
+  onCancelConfirm,
+  onConfirmOverwrite,
+  onInstall,
+}: InstallActionProps) {
+  const decision = searchRowAction(row, managedSlugs);
 
   if (decision.kind === 'unavailable') {
     return <span style={styles.badge}>Unavailable source</span>;
   }
 
   if (action.status === 'pending') {
-    return (
-      <button type="button" style={styles.disabledButton} disabled aria-busy>
-        Installing…
-      </button>
-    );
+    return <BusyButton label="Installing…" />;
   }
 
   if (action.status === 'success') {
-    return (
-      <span role="status" style={styles.success}>
-        ✓ {action.message}
-      </span>
-    );
+    return <SuccessLabel message={action.message} />;
   }
 
-  if (action.status === 'error') {
-    const retryOverwrite = decision.kind === 'overwrite' || action.error?.action === 'confirm';
-    return (
-      <div style={styles.error}>
-        <p style={styles.errorText}>{action.error?.message}</p>
-        <button
-          type="button"
-          style={styles.button}
-          onClick={() => (retryOverwrite ? onConfirm() : onInstall())}
-          aria-label={retryOverwrite ? `Replace ${row.name}` : `Install ${row.name}`}
-        >
-          {retryOverwrite ? 'Replace' : 'Retry'}
-        </button>
-      </div>
-    );
+  if (action.status === 'error' && action.error) {
+    return <InstallError error={action.error} onReplace={onStartConfirm} onRetryInstall={onInstall} />;
   }
 
   if (confirming) {
     return (
-      <div style={styles.confirm} role="group" aria-label={`Confirm replace ${row.name}`}>
-        <p style={styles.confirmText}>Reinstalling replaces the installed version of this skill.</p>
-        <div style={{ display: 'flex', gap: '6px' }}>
-          <button type="button" style={styles.button} onClick={onConfirm}>
-            Replace
-          </button>
-          <button type="button" style={styles.button} onClick={onCancelConfirm}>
-            Cancel
-          </button>
-        </div>
-      </div>
+      <ConfirmPanel
+        ariaLabel={`Confirm replace ${row.name}`}
+        message="Reinstalling replaces the installed version of this skill."
+        confirmLabel="Replace"
+        onConfirm={onConfirmOverwrite}
+        onCancel={onCancelConfirm}
+      />
     );
   }
 
   if (decision.kind === 'overwrite') {
     return (
-      <>
+      <div style={styles.actionRow}>
         <span style={styles.installedBadge}>Installed</span>
         <button
           type="button"
-          style={styles.button}
+          style={actionStyles.button}
           onClick={onStartConfirm}
           aria-label={`Replace ${row.name}`}
         >
           Replace
         </button>
-      </>
+      </div>
     );
   }
 
   return (
-    <button type="button" style={styles.button} onClick={onInstall} aria-label={`Install ${row.name}`}>
+    <button type="button" style={actionStyles.button} onClick={onInstall} aria-label={`Install ${row.name}`}>
       Install
     </button>
+  );
+}
+
+/**
+ * The scoped install-error rendering. `confirm` re-opens the overwrite
+ * confirmation (defensive duplicate from a stale managed list); `retry` safely
+ * re-runs the plain install; `none` renders copy only — a refusal is never
+ * presented as retryable (spec §12 "retry / confirm / nothing").
+ */
+function InstallError({
+  error,
+  onReplace,
+  onRetryInstall,
+}: {
+  error: { message: string; action: 'retry' | 'confirm' | 'none' };
+  onReplace: () => void;
+  onRetryInstall: () => void;
+}) {
+  return (
+    <div style={actionStyles.error}>
+      <ErrorNote error={error} />
+      {error.action === 'confirm' && (
+        <button type="button" style={actionStyles.button} onClick={onReplace}>
+          Replace
+        </button>
+      )}
+      {error.action === 'retry' && (
+        <button type="button" style={actionStyles.button} onClick={onRetryInstall}>
+          Retry
+        </button>
+      )}
+    </div>
   );
 }
 

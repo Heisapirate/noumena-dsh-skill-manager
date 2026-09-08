@@ -31,12 +31,8 @@ export interface ManagedSkillViewModel {
   badges: ManagedSkillBadge[];
   /** Recomputed `localContentHash` differs from the recorded one (local drift). */
   localModified: boolean;
-  /** Latest upstream `remoteSourceHash` differs from the recorded one. */
-  updateAvailable: boolean;
   /** Whether an update action is offered (only for update-available states). */
   canUpdate: boolean;
-  /** Whether an uninstall action is offered (always for a managed skill). */
-  canUninstall: boolean;
 }
 
 /** A destructive-action confirmation, derived once and rendered as inline UI. */
@@ -60,9 +56,7 @@ export function toManagedSkillViewModel(skill: ManagedSkill): ManagedSkillViewMo
     statusLabel: presentation.label,
     badges: presentation.badges,
     localModified: skill.localModified,
-    updateAvailable: skill.updateAvailable,
     canUpdate: skill.updateAvailable,
-    canUninstall: true,
   };
 }
 

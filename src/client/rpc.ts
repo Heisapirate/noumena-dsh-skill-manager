@@ -31,7 +31,7 @@ export interface SkillManagerApi {
   list(): Promise<ManagedSkill[]>;
   install(id: string, overwrite?: boolean): Promise<InstallResult>;
   update(id: string, discardLocalChanges?: boolean): Promise<UpdateResult>;
-  uninstall(id: string, options?: { confirm?: boolean; discardLocalChanges?: boolean }): Promise<UninstallResult>;
+  uninstall(slug: string, options?: { confirm?: boolean; discardLocalChanges?: boolean }): Promise<UninstallResult>;
 }
 
 /** A normalized failure crossing the RPC boundary. */
@@ -87,9 +87,11 @@ export function createSkillManagerApi(connection: ClientConnection): SkillManage
       });
       return unwrap(result);
     },
-    async uninstall(id, options) {
+    async uninstall(slug, options) {
       const result = await connection.rpc.call<UninstallResult>(RPC_CHANNEL, ENDPOINT_UNINSTALL, {
-        id,
+        // The wire field is `id` (the uninstall endpoint's contract) but the
+        // value is the kebab-case skill name (slug), never a skills.sh id.
+        id: slug,
         ...(options?.confirm !== undefined ? { confirm: options.confirm } : {}),
         ...(options?.discardLocalChanges !== undefined
           ? { discardLocalChanges: options.discardLocalChanges }

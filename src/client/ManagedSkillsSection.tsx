@@ -5,6 +5,13 @@
 
 import { useState } from 'react';
 import type { CSSProperties } from 'react';
+import {
+  actionStyles,
+  BusyButton,
+  ConfirmPanel,
+  ErrorNote,
+  SuccessLabel,
+} from './actions/controls';
 import type { ActionKind, ActionState } from './actions/types';
 import type { ManagedSkillBadge, ManagedSkillViewModel } from './managed/view';
 import { uninstallConfirmation, updateConfirmation } from './managed/view';
@@ -38,20 +45,6 @@ const styles: Record<string, CSSProperties> = {
   status: { fontSize: '13px' },
   badges: { display: 'flex', flexWrap: 'wrap', gap: '4px' },
   actions: { display: 'flex', flexDirection: 'column', gap: '6px', flexShrink: 0, alignItems: 'flex-end' },
-  button: { cursor: 'pointer' },
-  disabledButton: { cursor: 'default', opacity: 0.6 },
-  confirm: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    gap: '6px',
-    fontSize: '12px',
-    maxWidth: '240px',
-  },
-  confirmText: { margin: 0, fontSize: '12px', opacity: 0.85, textAlign: 'right' },
-  confirmButtons: { display: 'flex', gap: '6px' },
-  success: { fontSize: '12px', color: '#1e7e34', fontWeight: 600 },
-  errorText: { margin: 0, fontSize: '12px', color: '#b02a37', textAlign: 'right' },
   message: { margin: 0, fontSize: '13px' },
   errorBox: { display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' },
   retry: { cursor: 'pointer' },
@@ -130,8 +123,6 @@ interface ManagedSkillRowProps {
 
 function ManagedSkillRow({ skill, updateAction, uninstallAction, onUpdate, onUninstall }: ManagedSkillRowProps) {
   const [confirming, setConfirming] = useState<'update' | 'uninstall' | null>(null);
-  const updateConfirm = updateConfirmation(skill);
-  const uninstallConfirm = uninstallConfirmation(skill);
 
   return (
     <li style={styles.row} role="listitem">
@@ -151,30 +142,30 @@ function ManagedSkillRow({ skill, updateAction, uninstallAction, onUpdate, onUni
       </div>
 
       <div style={styles.actions}>
-        <UpdateAction
+        <ManagedAction
+          kind="update"
           skill={skill}
           action={updateAction}
           confirming={confirming === 'update'}
-          confirmation={updateConfirm}
           onStart={() => setConfirming('update')}
           onCancel={() => setConfirming(null)}
           onConfirm={() => {
             setConfirming(null);
-            onUpdate(skill.id, updateConfirm.discardsLocalChanges);
+            onUpdate(skill.id, updateConfirmation(skill).discardsLocalChanges);
           }}
         />
-        <UninstallAction
+        <ManagedAction
+          kind="uninstall"
           skill={skill}
           action={uninstallAction}
           confirming={confirming === 'uninstall'}
-          confirmation={uninstallConfirm}
           onStart={() => setConfirming('uninstall')}
           onCancel={() => setConfirming(null)}
           onConfirm={() => {
             setConfirming(null);
             onUninstall(skill.slug, {
               confirm: true,
-              discardLocalChanges: uninstallConfirm.discardsLocalChanges,
+              discardLocalChanges: uninstallConfirmation(skill).discardsLocalChanges,
             });
           }}
         />
@@ -183,120 +174,67 @@ function ManagedSkillRow({ skill, updateAction, uninstallAction, onUpdate, onUni
   );
 }
 
-interface UpdateActionProps {
+type ManagedActionKind = 'update' | 'uninstall';
+
+interface ManagedActionProps {
+  kind: ManagedActionKind;
   skill: ManagedSkillViewModel;
   action: ActionState;
   confirming: boolean;
-  confirmation: ReturnType<typeof updateConfirmation>;
   onStart: () => void;
   onCancel: () => void;
   onConfirm: () => void;
 }
 
-function UpdateAction({ skill, action, confirming, confirmation, onStart, onCancel, onConfirm }: UpdateActionProps) {
-  if (action.status === 'pending') {
-    return (
-      <button type="button" style={styles.disabledButton} disabled aria-busy>
-        Updating…
-      </button>
-    );
-  }
+/** One mutation button (update or uninstall) with its shared state cascade. */
+function ManagedAction({ kind, skill, action, confirming, onStart, onCancel, onConfirm }: ManagedActionProps) {
+  const isUpdate = kind === 'update';
+  const confirmation = isUpdate ? updateConfirmation(skill) : uninstallConfirmation(skill);
+  const busyLabel = isUpdate ? 'Updating…' : 'Uninstalling…';
+  const primaryLabel = isUpdate ? 'Update' : 'Uninstall';
+  const ariaLabel = isUpdate ? `Update ${skill.slug}` : `Uninstall ${skill.slug}`;
+  const confirmAria = isUpdate ? `Confirm update ${skill.slug}` : `Confirm uninstall ${skill.slug}`;
+  const disabled = isUpdate && !skill.canUpdate;
 
+  if (action.status === 'pending') {
+    return <BusyButton label={busyLabel} />;
+  }
   if (confirming) {
     return (
-      <div style={styles.confirm} role="group" aria-label={`Confirm update ${skill.slug}`}>
-        <p style={styles.confirmText}>{confirmation.message}</p>
-        <div style={styles.confirmButtons}>
-          <button type="button" style={styles.button} onClick={onConfirm}>
-            {confirmation.confirmLabel}
+      <ConfirmPanel
+        ariaLabel={confirmAria}
+        message={confirmation.message}
+        confirmLabel={confirmation.confirmLabel}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+  }
+  if (action.status === 'success') {
+    return <SuccessLabel message={action.message} />;
+  }
+  if (action.status === 'error' && action.error) {
+    return (
+      <div style={actionStyles.error}>
+        <ErrorNote error={action.error} />
+        {action.error.action === 'retry' && (
+          <button type="button" style={actionStyles.button} onClick={onStart} aria-label={`Retry ${ariaLabel}`}>
+            Retry
           </button>
-          <button type="button" style={styles.button} onClick={onCancel}>
-            Cancel
-          </button>
-        </div>
+        )}
       </div>
     );
   }
-
-  if (action.status === 'success') {
-    return (
-      <span role="status" style={styles.success}>
-        ✓ {action.message}
-      </span>
-    );
-  }
-
   return (
-    <>
-      <button
-        type="button"
-        style={skill.canUpdate ? styles.button : styles.disabledButton}
-        disabled={!skill.canUpdate}
-        onClick={onStart}
-        aria-label={`Update ${skill.slug}`}
-      >
-        Update
-      </button>
-      {action.status === 'error' && <p style={styles.errorText}>{action.error?.message}</p>}
-    </>
-  );
-}
-
-interface UninstallActionProps {
-  skill: ManagedSkillViewModel;
-  action: ActionState;
-  confirming: boolean;
-  confirmation: ReturnType<typeof uninstallConfirmation>;
-  onStart: () => void;
-  onCancel: () => void;
-  onConfirm: () => void;
-}
-
-function UninstallAction({ skill, action, confirming, confirmation, onStart, onCancel, onConfirm }: UninstallActionProps) {
-  if (action.status === 'pending') {
-    return (
-      <button type="button" style={styles.disabledButton} disabled aria-busy>
-        Uninstalling…
-      </button>
-    );
-  }
-
-  if (confirming) {
-    return (
-      <div style={styles.confirm} role="group" aria-label={`Confirm uninstall ${skill.slug}`}>
-        <p style={styles.confirmText}>{confirmation.message}</p>
-        <div style={styles.confirmButtons}>
-          <button type="button" style={styles.button} onClick={onConfirm}>
-            {confirmation.confirmLabel}
-          </button>
-          <button type="button" style={styles.button} onClick={onCancel}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (action.status === 'success') {
-    return (
-      <span role="status" style={styles.success}>
-        ✓ {action.message}
-      </span>
-    );
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        style={styles.button}
-        onClick={onStart}
-        aria-label={`Uninstall ${skill.slug}`}
-      >
-        Uninstall
-      </button>
-      {action.status === 'error' && <p style={styles.errorText}>{action.error?.message}</p>}
-    </>
+    <button
+      type="button"
+      style={disabled ? actionStyles.disabledButton : actionStyles.button}
+      disabled={disabled}
+      onClick={onStart}
+      aria-label={ariaLabel}
+    >
+      {primaryLabel}
+    </button>
   );
 }
 

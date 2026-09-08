@@ -12,7 +12,7 @@ import { idleActionState, type ActionKind, type ActionState } from './types';
 export interface MutationApi {
   install(id: string, overwrite: boolean): Promise<unknown>;
   update(id: string, discardLocalChanges: boolean): Promise<unknown>;
-  uninstall(id: string, options: { confirm: boolean; discardLocalChanges: boolean }): Promise<unknown>;
+  uninstall(slug: string, options: { confirm: boolean; discardLocalChanges: boolean }): Promise<unknown>;
 }
 
 export interface ActionStoreOptions extends MutationApi {
@@ -80,9 +80,9 @@ export function createActionStore(options: ActionStoreOptions): ActionStore {
     runUpdate(id, discardLocalChanges = false) {
       run('update', id, () => options.update(id, discardLocalChanges));
     },
-    runUninstall(id, optionsArg) {
-      run('uninstall', id, () =>
-        options.uninstall(id, {
+    runUninstall(slug, optionsArg) {
+      run('uninstall', slug, () =>
+        options.uninstall(slug, {
           confirm: optionsArg?.confirm ?? false,
           discardLocalChanges: optionsArg?.discardLocalChanges ?? false,
         }),
