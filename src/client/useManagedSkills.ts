@@ -4,6 +4,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { ClientConnection } from './connection';
+import { presentThrown } from './copy';
+import type { ErrorPresentation } from './copy';
 import { toManagedSkillViewModel } from './managed/view';
 import type { ManagedSkillViewModel } from './managed/view';
 import { createSkillManagerApi } from './rpc';
@@ -11,7 +13,7 @@ import { createSkillManagerApi } from './rpc';
 export type ManagedSkillsState =
   | { status: 'loading'; skills: ManagedSkillViewModel[]; error: null }
   | { status: 'ready'; skills: ManagedSkillViewModel[]; error: null }
-  | { status: 'error'; skills: ManagedSkillViewModel[]; error: string };
+  | { status: 'error'; skills: ManagedSkillViewModel[]; error: ErrorPresentation };
 
 export interface ManagedSkillsController {
   state: ManagedSkillsState;
@@ -38,7 +40,8 @@ export function useManagedSkills(connection: ClientConnection): ManagedSkillsCon
         setState({
           status: 'error',
           skills: [],
-          error: err instanceof Error ? err.message : String(err),
+          // Map to non-leaking copy (spec §12): no raw host error crosses into the UI.
+          error: presentThrown(err),
         });
       });
     return () => {

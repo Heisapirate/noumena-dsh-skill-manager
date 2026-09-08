@@ -4,7 +4,11 @@
 // free of status decisions.
 
 import { describe, expect, it } from 'vitest';
-import { toManagedSkillViewModel } from '../../src/client/managed/view';
+import {
+  toManagedSkillViewModel,
+  uninstallConfirmation,
+  updateConfirmation,
+} from '../../src/client/managed/view';
 import type { ManagedSkill, UpdateStatus } from '../../src/types';
 
 function skill(overrides: Partial<ManagedSkill> = {}): ManagedSkill {
@@ -79,5 +83,59 @@ describe('toManagedSkillViewModel', () => {
     const vm = toManagedSkillViewModel(skill({ status: 'unexpected-host-status' as UpdateStatus }));
     expect(vm.statusLabel).toBe('Status unknown');
     expect(vm.badges).toEqual([{ label: 'Status unknown', tone: 'muted' }]);
+  });
+});
+
+describe('toManagedSkillViewModel — action availability (Issue #18)', () => {
+  it('offers update only for an update-available state', () => {
+    expect(toManagedSkillViewModel(skill({ status: 'update-available', updateAvailable: true })).canUpdate).toBe(true);
+    expect(
+      toManagedSkillViewModel(
+        skill({ status: 'update-available-and-locally-modified', updateAvailable: true, localModified: true }),
+      ).canUpdate,
+    ).toBe(true);
+  });
+
+  it('does not offer update when up-to-date, only locally modified, or source unavailable', () => {
+    expect(toManagedSkillViewModel(skill({ status: 'up-to-date' })).canUpdate).toBe(false);
+    expect(toManagedSkillViewModel(skill({ status: 'locally-modified', localModified: true })).canUpdate).toBe(false);
+    expect(toManagedSkillViewModel(skill({ status: 'source-unavailable' })).canUpdate).toBe(false);
+    expect(toManagedSkillViewModel(skill({ status: 'remote-check-failure' })).canUpdate).toBe(false);
+  });
+
+  it('preserves the local drift flag for confirmation copy', () => {
+    expect(toManagedSkillViewModel(skill()).localModified).toBe(false);
+    expect(toManagedSkillViewModel(skill({ status: 'locally-modified', localModified: true })).localModified).toBe(true);
+  });
+});
+
+describe('updateConfirmation / uninstallConfirmation (Issue #18)', () => {
+  it('update on a clean skill does not claim to discard changes', () => {
+    const confirmation = updateConfirmation(toManagedSkillViewModel(skill({ status: 'update-available' })));
+    expect(confirmation.discardsLocalChanges).toBe(false);
+    expect(confirmation.confirmLabel).toBe('Update');
+  });
+
+  it('update on a locally modified skill warns that changes are discarded', () => {
+    const confirmation = updateConfirmation(
+      toManagedSkillViewModel(
+        skill({ status: 'update-available-and-locally-modified', updateAvailable: true, localModified: true }),
+      ),
+    );
+    expect(confirmation.discardsLocalChanges).toBe(true);
+    expect(confirmation.message.toLowerCase()).toMatch(/discard|local chang/i);
+    expect(confirmation.confirmLabel).toMatch(/discard/i);
+  });
+
+  it('uninstall always confirms and warns about local changes when drifted', () => {
+    const clean = uninstallConfirmation(toManagedSkillViewModel(skill({ status: 'up-to-date' })));
+    expect(clean.discardsLocalChanges).toBe(false);
+    expect(clean.confirmLabel).toBe('Uninstall');
+
+    const drifted = uninstallConfirmation(
+      toManagedSkillViewModel(skill({ status: 'locally-modified', localModified: true })),
+    );
+    expect(drifted.discardsLocalChanges).toBe(true);
+    expect(drifted.message.toLowerCase()).toMatch(/discard|local chang/i);
   });
 });

@@ -3,14 +3,16 @@
 // `/skill-manager` health RPC — plus stable containers that later tickets fill
 // with real search and managed-skills UI.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { ENDPOINT_HEALTH, RPC_CHANNEL } from '../contract';
 import type { HealthInfo } from '../types';
 import type { ClientConnection } from './connection';
 import { ManagedSkillsSection } from './ManagedSkillsSection';
+import { presentError, presentThrown } from './copy';
 import { SearchSection } from './SearchSection';
 import { useManagedSkills } from './useManagedSkills';
+import { useSkillActions } from './useSkillActions';
 import { useSkillSearch } from './useSkillSearch';
 
 export interface SkillManagerPanelProps {
@@ -43,6 +45,15 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
   });
   const search = useSkillSearch(connection);
   const managed = useManagedSkills(connection);
+  const actions = useSkillActions(connection, () => managed.refresh());
+
+  // The slugs this plugin already manages (from the list), used to mark search
+  // rows as already-installed. Derived from the host `list` result, never from a
+  // directory or a user-entered slug (ADR-0001/0002).
+  const managedSlugs = useMemo(
+    () => new Set(managed.state.skills.map((skill) => skill.slug)),
+    [managed.state.skills],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -54,7 +65,11 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
         if (result.ok) {
           setStatus({ state: 'connected', health: result.value, message: null });
         } else {
-          setStatus({ state: 'unavailable', health: null, message: result.error.message });
+          setStatus({
+            state: 'unavailable',
+            health: null,
+            message: presentError(result.error.code).message,
+          });
         }
       })
       .catch((err: unknown) => {
@@ -62,7 +77,7 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
         setStatus({
           state: 'unavailable',
           health: null,
-          message: err instanceof Error ? err.message : String(err),
+          message: presentThrown(err).message,
         });
       });
     return () => {
@@ -85,12 +100,21 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
           state={search.state}
           onQueryChange={search.setQuery}
           onRetry={search.retry}
+          managedSlugs={managedSlugs}
+          actionState={actions.stateFor}
+          onInstall={actions.install}
         />
       </section>
 
       <section style={styles.section} aria-label="Managed skills">
         <h2 style={styles.heading}>Managed skills</h2>
-        <ManagedSkillsSection state={managed.state} onRefresh={managed.refresh} />
+        <ManagedSkillsSection
+          state={managed.state}
+          onRefresh={managed.refresh}
+          actionState={actions.stateFor}
+          onUpdate={actions.update}
+          onUninstall={actions.uninstall}
+        />
       </section>
 
       <section style={styles.section} aria-label="Host connection">
