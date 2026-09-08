@@ -17,6 +17,27 @@ export interface HealthInfo {
   now: number;
 }
 
+/** Payload of the `install` endpoint (`id` = skills.sh `owner/repo/slug`). */
+export interface InstallRequest {
+  id: string;
+  /** Required to overwrite an already plugin-managed skill (see §9). */
+  overwrite?: boolean;
+}
+
+/**
+ * Result of a successful install: the provenance recorded for the skill, with
+ * the two hashes as plain strings (the branded host-only types are not sent
+ * across the RPC boundary).
+ */
+export interface InstallResult {
+  slug: string;
+  source: string;
+  remoteSourceHash: string;
+  localContentHash: string;
+  installedAt: string;
+  updatedAt: string;
+}
+
 /**
  * Host-side RPC handler signature (rc.1): `(endpoint, payload, signal)`.
  * `signal` is the Connection-provided abort signal for the request.
