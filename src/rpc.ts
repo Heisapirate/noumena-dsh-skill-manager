@@ -1,8 +1,9 @@
+import { ENDPOINT_HEALTH, ENDPOINT_PING } from './contract';
 import { SkillManagerService } from './service';
 import type { RpcHandler, RpcResult } from './types';
 
 /** Endpoints that answer the health probe; `ping` is a liveness alias of `health`. */
-const HEALTH_ENDPOINTS = new Set(['health', 'ping']);
+const HEALTH_ENDPOINTS = new Set([ENDPOINT_HEALTH, ENDPOINT_PING]);
 
 /**
  * Build the host-side handler for the `/skill-manager` channel. It dispatches a

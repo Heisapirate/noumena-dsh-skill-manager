@@ -9,10 +9,15 @@
 // than `.mjs` (the package `main`/`exports` pointer would otherwise break).
 //
 // The client `external` list is the EXACT rc.1 browser runtime static-module
-// seed set (from the installed @deepseek-ai/dsh@0.1.2-rc.1
-// `dsh-web-frontend` `staticModules` map), kept in scripts/seed-modules.json so
-// the build config and the purity gate share one source of truth. A bundle may
-// only `require()` those words; everything else is inlined via `noExternal`.
+// seed set, derived from the installed @deepseek-ai/dsh@0.1.2-rc.1
+// `dsh-web-frontend` `staticModules` map (see scripts/seed-modules.md for the
+// derivation). The list lives in scripts/seed-modules.json so the build config
+// and the purity gate share one source of truth. A bundle may only `require()`
+// those words; everything else is inlined via `deps.neverBundle`.
+//
+// Note: these seed *modules* are distinct from the package's `dsh.client.inject`
+// *services* — the inject list declares cordis services, the seed list declares
+// require-able modules (see scripts/seed-modules.md).
 
 import { readFileSync } from 'node:fs';
 

@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { ENDPOINT_HEALTH, RPC_CHANNEL } from '../contract';
 import type { HealthInfo } from '../types';
 import type { ClientConnection } from './connection';
 
@@ -42,11 +43,11 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
     let alive = true;
     setStatus((prev) => ({ ...prev, state: 'checking', message: null }));
     connection.rpc
-      .call('/skill-manager', 'health', {})
+      .call<HealthInfo>(RPC_CHANNEL, ENDPOINT_HEALTH, {})
       .then((result) => {
         if (!alive) return;
         if (result.ok) {
-          setStatus({ state: 'connected', health: result.value as HealthInfo, message: null });
+          setStatus({ state: 'connected', health: result.value, message: null });
         } else {
           setStatus({ state: 'unavailable', health: null, message: result.error.message });
         }

@@ -1,6 +1,6 @@
-// Browser half. Registers a top-level `settings.section` page and hands the
-// injected `connection` service to the panel, which proves the browser → host →
-// browser RPC round trip through the `/skill-manager` health probe.
+// Client half. Registers a top-level `settings.section` page and hands the
+// injected `connection` service to the panel, which proves the client → host →
+// client RPC round trip through the `/skill-manager` health probe.
 
 import type { ComponentType } from 'react';
 import type { ClientConnection } from './connection';

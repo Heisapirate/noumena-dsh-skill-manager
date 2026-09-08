@@ -1,3 +1,4 @@
+import { PLUGIN_NAME } from './meta';
 import type { HealthInfo } from './types';
 
 export interface SkillManagerServiceOptions {
@@ -25,7 +26,7 @@ export class SkillManagerService {
   health(): HealthInfo {
     return {
       ok: true,
-      plugin: 'dsh-skill-manager',
+      plugin: PLUGIN_NAME,
       version: this.version,
       now: this.now(),
     };

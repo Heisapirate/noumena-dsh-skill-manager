@@ -1,6 +1,6 @@
-// Server-side smoke check against the BUILT host bundle (`lib/index.js`).
+// Host-side smoke check against the BUILT host bundle (`lib/index.js`).
 // Proves the host face registers the `/skill-manager` channel and answers the
-// typed health/ping probe — the same contract the browser exercises over RPC.
+// typed health/ping probe — the same contract the client exercises over RPC.
 
 import { apply } from '../lib/index.js';
 

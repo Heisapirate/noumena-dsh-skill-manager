@@ -4,6 +4,7 @@
 // rc.1 contract: `connection.rpc.handle(channel, handler)` with a handler of
 // shape `(endpoint, payload, signal) => Promise<{ok,value}|{ok:false,error}>`.
 
+import { RPC_CHANNEL } from './contract';
 import { PLUGIN_NAME, PLUGIN_VERSION } from './meta';
 import { createRpcHandler } from './rpc';
 import { SkillManagerService } from './service';
@@ -28,7 +29,7 @@ export interface HostContext {
 export function apply(ctx: HostContext): void {
   const service = new SkillManagerService({ version: PLUGIN_VERSION });
   const connection = ctx.get('connection');
-  const disposer = connection.rpc.handle('/skill-manager', createRpcHandler(service));
-  ctx.effect(() => disposer, `${PLUGIN_NAME}: /skill-manager channel`);
-  console.log(`[${PLUGIN_NAME}] registered /skill-manager RPC channel`);
+  const disposer = connection.rpc.handle(RPC_CHANNEL, createRpcHandler(service));
+  ctx.effect(() => disposer, `${PLUGIN_NAME}: ${RPC_CHANNEL} channel`);
+  console.log(`[${PLUGIN_NAME}] registered ${RPC_CHANNEL} RPC channel`);
 }

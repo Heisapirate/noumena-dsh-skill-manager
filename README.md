@@ -2,7 +2,7 @@
 
 A DeepSeek Harness (DSH) external plugin that adds a **DSH Skill Manager** page
 to the DSH WebUI settings. From it, a user will be able to search skills.sh,
-install/update skills, and manage the skills the plugin owns.
+install and update skills, and manage the plugin-managed skills on this machine.
 
 > **Status: foundation (Issue #9).** This release ships the production plugin
 > skeleton — GitHub-installable package, host/client split, `settings.section`
@@ -68,8 +68,32 @@ react, react/jsx-runtime, react-dom, react-dom/client,
 ```
 
 This list is the single source of truth in `scripts/seed-modules.json`, consumed
-by `tsdown.config.mjs` (the client `external`/`deps.neverBundle` list) and
-`scripts/verify-client-purity.mjs` (the build-time purity gate).
+by `tsdown.config.mjs` (the client `deps.neverBundle` list) and
+`scripts/verify-client-purity.mjs` (the build-time purity gate). The derivation
+from the installed rc.1 `dsh-web-frontend` source — and the difference from the
+Phase 2 spike's rc.6-derived list — is recorded in `scripts/seed-modules.md`.
+
+## Runtime smoke
+
+The host-side contract is smoke-tested against the built bundle:
+
+```sh
+pnpm run smoke    # registers /skill-manager; health + ping answer; unknown endpoint fails typed
+```
+
+Full install + boot verification (performed once per release; the `github:`
+spec is the same pnpm reconcile path as the `link:` smoke used locally):
+
+```sh
+export DSH_HOME="$PWD/.proto-dsh-home"      # isolated from ~/.dsh (gitignored)
+node <dsh>/lib/bin.js plugin --profile web add link:"$PWD"
+node <dsh>/lib/bin.js web --port 4123 --no-open
+```
+
+Evidence expected at boot: `[dsh-skill-manager] registered /skill-manager RPC
+channel` and the `dsh web: http://…` URL with no client-module loader error.
+The settings page title, its rendered layout, and the browser → host → browser
+health round trip are confirmed in a real browser (see the PR for Issue #9).
 
 ## Development
 
