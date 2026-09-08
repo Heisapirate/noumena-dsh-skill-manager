@@ -1,0 +1,9 @@
+# Supply-chain policy: which dependencies may run install scripts. Every other
+# dependency's build scripts are refused (ERR_PNPM_IGNORED_BUILDS) until a
+# maintainer rules on it here.
+#
+# esbuild's postinstall only validates the platform binary, which already ships
+# via the matching `@esbuild/<platform>` optional dependency, so the script is
+# unnecessary and is explicitly denied.
+allowBuilds:
+  esbuild: false

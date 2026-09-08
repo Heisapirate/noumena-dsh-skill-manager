@@ -38,7 +38,17 @@ export default [
     dts: false,
     clean: false,
     fixedExtension: false,
-    deps: { neverBundle: [/@deepseek-ai\//] },
+    deps: {
+      // `@deepseek-ai/*` packages stay external (resolved by the DSH host
+      // runtime) except `@deepseek-ai/dsh-atomic-write`, a runtime dependency of
+      // this plugin that is force-bundled so the prebuilt host bundle has no
+      // dependency on node_modules. The two options act at different stages: the
+      // negative-lookahead `neverBundle` stops the top-level `external` list
+      // from matching it, and `alwaysBundle` overrides tsdown's automatic
+      // externalization of production dependencies.
+      neverBundle: [/@deepseek-ai\/(?!dsh-atomic-write(?:$|\/))/],
+      alwaysBundle: ['@deepseek-ai/dsh-atomic-write'],
+    },
   },
   {
     name: `${id}/client`,
