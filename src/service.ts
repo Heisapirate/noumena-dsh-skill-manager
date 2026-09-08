@@ -1,9 +1,9 @@
 // The host half of the skill manager: the business-logic service behind the
 // `/skill-manager` RPC channel. It owns the security boundary for networking,
-// filesystem, manifest, hashing, path validation, and mutations, and delegates
-// each transaction to its module — install (#14), update (#16), and uninstall
-// (#17) — which all compose the same manifest (#10) and safe-path (#11)
-// primitives.
+// filesystem, manifest, hashing, path validation, and mutations. Read-only
+// search and description hydration (#13) stay here beside the transactions it
+// delegates — install (#14), update (#16), and uninstall (#17) — which all
+// compose the same manifest (#10) and safe-path (#11) primitives.
 
 import { installSkill, type InstallDeps } from './install';
 import { ManifestStore } from './manifest/store';
@@ -12,9 +12,11 @@ import { SkillRoot } from './path-safety';
 import type { SkillsShClient } from './skills-sh';
 import type {
   CheckUpdatesResult,
+  DescribeResponse,
   HealthInfo,
   InstallRequest,
   InstallResult,
+  SearchResponse,
   UninstallRequest,
   UninstallResult,
   UpdateInput,
@@ -66,6 +68,28 @@ export class SkillManagerService {
       version: this.version,
       now: this.now(),
     };
+  }
+
+  /**
+   * Search skills.sh for normalized basic results (Issue #13). Never downloads
+   * snapshots: descriptions are hydrated separately via {@link describe}.
+   * Queries shorter than the adapter minimum resolve to an empty result set
+   * without a network call. Errors propagate as typed `SkillsShError`s for the
+   * RPC layer to map.
+   */
+  async search(query: string, signal?: AbortSignal): Promise<SearchResponse> {
+    const results = await this.deps.client.search(query, { signal });
+    return { results, complete: true };
+  }
+
+  /**
+   * Lazily hydrate one result's description from its snapshot (Issue #13).
+   * Returns `null` when the skill has no description; throws a typed error on
+   * failure so a single bad row never fails the surrounding search.
+   */
+  async describe(id: string, signal?: AbortSignal): Promise<DescribeResponse> {
+    const description = await this.deps.client.getDescription(id, { signal });
+    return { description };
   }
 
   /** Install one GitHub-backed skill as an atomic transaction (Issue #14). */

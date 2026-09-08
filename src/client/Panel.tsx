@@ -8,6 +8,8 @@ import type { CSSProperties } from 'react';
 import { ENDPOINT_HEALTH, RPC_CHANNEL } from '../contract';
 import type { HealthInfo } from '../types';
 import type { ClientConnection } from './connection';
+import { SearchSection } from './SearchSection';
+import { useSkillSearch } from './useSkillSearch';
 
 export interface SkillManagerPanelProps {
   connection: ClientConnection;
@@ -38,6 +40,7 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
     health: null,
     message: null,
   });
+  const search = useSkillSearch(connection);
 
   useEffect(() => {
     let alive = true;
@@ -76,7 +79,11 @@ export function SkillManagerPanel({ connection }: SkillManagerPanelProps) {
 
       <section style={styles.section} aria-label="Skill search">
         <h2 style={styles.heading}>Search</h2>
-        <p style={styles.placeholder}>Search skills.sh will appear here in a later update.</p>
+        <SearchSection
+          state={search.state}
+          onQueryChange={search.setQuery}
+          onRetry={search.retry}
+        />
       </section>
 
       <section style={styles.section} aria-label="Managed skills">

@@ -1,8 +1,10 @@
 import {
   ENDPOINT_CHECK_UPDATES,
+  ENDPOINT_DESCRIBE,
   ENDPOINT_HEALTH,
   ENDPOINT_INSTALL,
   ENDPOINT_PING,
+  ENDPOINT_SEARCH,
   ENDPOINT_UNINSTALL,
   ENDPOINT_UPDATE,
 } from './contract';
@@ -15,16 +17,46 @@ import type { InstallRequest, RpcHandler, RpcResult, UninstallRequest, UpdateInp
 /** Endpoints that answer the health probe; `ping` is a liveness alias of `health`. */
 const HEALTH_ENDPOINTS = new Set([ENDPOINT_HEALTH, ENDPOINT_PING]);
 
+function readSearchQuery(payload: unknown): string {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new SkillManagerError('invalid-request', 'search requires a payload object');
+  }
+  const query = (payload as { query?: unknown }).query;
+  if (typeof query !== 'string') {
+    throw new SkillManagerError('invalid-request', 'search requires a `query` string');
+  }
+  return query;
+}
+
+function readDescribeId(payload: unknown): string {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new SkillManagerError('invalid-request', 'describe requires a payload object');
+  }
+  const id = (payload as { id?: unknown }).id;
+  if (typeof id !== 'string' || id.trim() === '') {
+    throw new SkillManagerError('invalid-request', 'describe requires a non-empty `id` string');
+  }
+  return id;
+}
+
 /**
  * Build the host-side handler for the `/skill-manager` channel. It dispatches a
  * channel-relative endpoint to a service method and normalizes every outcome to
- * the typed `{ok,value}|{ok:false,error}` result — never a raw throw.
+ * the typed `{ok,value}|{ok:false,error}` result — never a raw throw — via the
+ * single {@link toRpcError} normalizer, so typed skills.sh failures and
+ * transaction failures keep their normalized `code`.
  */
 export function createRpcHandler(service: SkillManagerService): RpcHandler {
   return async (endpoint: string, payload: unknown, signal: AbortSignal): Promise<RpcResult<unknown>> => {
     try {
       if (HEALTH_ENDPOINTS.has(endpoint)) {
         return { ok: true, value: service.health() };
+      }
+      if (endpoint === ENDPOINT_SEARCH) {
+        return { ok: true, value: await service.search(readSearchQuery(payload), signal) };
+      }
+      if (endpoint === ENDPOINT_DESCRIBE) {
+        return { ok: true, value: await service.describe(readDescribeId(payload), signal) };
       }
       if (endpoint === ENDPOINT_INSTALL) {
         const request = coerceInstallRequest(payload);

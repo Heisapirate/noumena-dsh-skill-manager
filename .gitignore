@@ -1,4 +1,5 @@
 node_modules/
 .pnpm-store/
 .proto-dsh-home/
+.dsh-home-13/
 *.log
