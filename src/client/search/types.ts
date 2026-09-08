@@ -38,3 +38,6 @@ export interface SearchSnapshot {
 
 export const idleDescription: DescriptionState = { status: 'idle', text: null };
 export const unavailableDescription: DescriptionState = { status: 'unavailable', text: null };
+
+/** The initial idle snapshot shared by the engine and the React hook. */
+export const idleSnapshot: SearchSnapshot = { status: 'idle', query: '', results: [], error: null };

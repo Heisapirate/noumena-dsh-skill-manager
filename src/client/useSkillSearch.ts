@@ -9,7 +9,7 @@ import type { ClientConnection } from './connection';
 import { createSkillManagerApi } from './rpc';
 import { createSearchEngine } from './search/engine';
 import type { SearchEngine } from './search/engine';
-import type { SearchSnapshot } from './search/types';
+import { idleSnapshot, type SearchSnapshot } from './search/types';
 
 export interface SkillSearchController {
   state: SearchSnapshot;
@@ -17,12 +17,10 @@ export interface SkillSearchController {
   retry: () => void;
 }
 
-const INITIAL_SNAPSHOT: SearchSnapshot = { status: 'idle', query: '', results: [], error: null };
-
 export function useSkillSearch(connection: ClientConnection): SkillSearchController {
   const api = useMemo(() => createSkillManagerApi(connection), [connection]);
   const [engine, setEngine] = useState<SearchEngine | null>(null);
-  const [state, setState] = useState<SearchSnapshot>(INITIAL_SNAPSHOT);
+  const [state, setState] = useState<SearchSnapshot>(idleSnapshot);
 
   useEffect(() => {
     const nextEngine = createSearchEngine({

@@ -13,7 +13,7 @@ export interface SkillManagerServiceOptions {
 
 /**
  * The host half of the skill manager — the security boundary that owns all
- * skills.sh networking. The browser never talks to skills.sh directly; it
+ * skills.sh networking. The Client never talks to skills.sh directly; it
  * reaches this service through typed `/skill-manager` RPC endpoints. Issue #13
  * adds read-only `search` and `describe`; install/update/uninstall mutations
  * land in later tickets and must never be implemented here.

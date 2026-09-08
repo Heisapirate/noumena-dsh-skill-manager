@@ -4,6 +4,7 @@
 // blocks the result list, a superseded batch is discarded, and one bad row
 // degrades to "description unavailable" without failing the rest.
 
+import { isCancellation } from './cancellation';
 import type { DescriptionState } from './types';
 
 /** A settled (cacheable) description outcome. */
@@ -27,8 +28,6 @@ export interface DescriptionHydrator {
   cancel(): void;
   /** Cancel everything and stop emitting updates. */
   dispose(): void;
-  /** Whether an id already has a cached (settled) description. */
-  isCached(id: string): boolean;
 }
 
 const DEFAULT_CONCURRENCY = 4;
@@ -113,13 +112,5 @@ export function createDescriptionHydrator(options: DescriptionHydratorOptions): 
     hydrate,
     cancel,
     dispose,
-    isCached: (id: string) => cache.has(id),
   };
-}
-
-function isCancellation(err: unknown): boolean {
-  return (
-    err instanceof Error &&
-    (err.name === 'AbortError' || (err as { code?: unknown }).code === 'cancelled')
-  );
 }

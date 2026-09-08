@@ -5,10 +5,12 @@
 // typed `search`/`describe` functions it is given.
 
 import type { SkillSearchResult } from '../../types';
+import { isCancellation } from './cancellation';
 import { createDescriptionHydrator } from './hydrator';
 import type { DescriptionHydrator } from './hydrator';
 import {
   idleDescription,
+  idleSnapshot,
   unavailableDescription,
   type DescriptionState,
   type SearchError,
@@ -45,14 +47,12 @@ const DEFAULT_MIN_QUERY_LENGTH = 2;
 const DEFAULT_DEBOUNCE_MS = 300;
 const DEFAULT_CONCURRENCY = 4;
 
-const IDLE_SNAPSHOT: SearchSnapshot = { status: 'idle', query: '', results: [], error: null };
-
 export function createSearchEngine(options: SearchEngineOptions): SearchEngine {
   const minQueryLength = options.minQueryLength ?? DEFAULT_MIN_QUERY_LENGTH;
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
   const schedule = options.schedule ?? defaultSchedule;
 
-  let snapshot: SearchSnapshot = { ...IDLE_SNAPSHOT };
+  let snapshot: SearchSnapshot = { ...idleSnapshot };
   const listeners = new Set<(state: SearchSnapshot) => void>();
 
   let debounceCancel: (() => void) | null = null;
@@ -125,6 +125,13 @@ export function createSearchEngine(options: SearchEngineOptions): SearchEngine {
       }));
       const nextStatus: SearchSnapshot['status'] = rows.length > 0 ? 'results' : 'empty';
       setState({ status: nextStatus, query, results: rows, error: null });
+      // Progressive hydration: basic results are already rendered, so hydrate
+      // descriptions lazily with bounded concurrency. "Visible rows" (spec §5)
+      // is approximated by "all installable rows in the current result set":
+      // the settings list is not virtualized, and keeping this trigger in the
+      // framework-agnostic engine (rather than an IntersectionObserver in the
+      // DOM) keeps hydration unit-testable. Viewport-gated hydration is a
+      // follow-up refinement, not required by the ticket's acceptance criteria.
       hydrator.hydrate(rows.filter((row) => row.installable).map((row) => row.id));
     } catch (err) {
       if (seq !== searchSeq || disposed) return; // stale, ignore
@@ -172,11 +179,4 @@ function toSearchError(err: unknown): SearchError {
     return { code: typeof code === 'string' ? code : 'unknown', message: err.message };
   }
   return { code: 'unknown', message: String(err) };
-}
-
-function isCancellation(err: unknown): boolean {
-  return (
-    err instanceof Error &&
-    (err.name === 'AbortError' || (err as { code?: unknown }).code === 'cancelled')
-  );
 }

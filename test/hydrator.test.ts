@@ -91,7 +91,6 @@ describe('createDescriptionHydrator', () => {
     expect(calls).toEqual(['a', 'b', 'c']); // 'a' served from cache
     expect(updates.a).toEqual({ status: 'loaded', text: 'desc:a' });
     expect(updates.c).toEqual({ status: 'loaded', text: 'desc:c' });
-    expect(hydrator.isCached('a')).toBe(true);
   });
 
   it('isolates a per-row failure and still hydrates the rest', async () => {
