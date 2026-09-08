@@ -8,6 +8,7 @@ import { RPC_CHANNEL } from './contract';
 import { PLUGIN_NAME, PLUGIN_VERSION } from './meta';
 import { createRpcHandler } from './rpc';
 import { SkillManagerService } from './service';
+import { resolveSkillsRoot } from './skills-root';
 import type { RpcHandler } from './types';
 
 /** Declared cordis service dependencies for the host half. */
@@ -27,7 +28,7 @@ export interface HostContext {
 
 /** Entry point invoked by the DSH host runner at boot. */
 export function apply(ctx: HostContext): void {
-  const service = new SkillManagerService({ version: PLUGIN_VERSION });
+  const service = new SkillManagerService({ version: PLUGIN_VERSION, skillsRoot: resolveSkillsRoot() });
   const connection = ctx.get('connection');
   const disposer = connection.rpc.handle(RPC_CHANNEL, createRpcHandler(service));
   ctx.effect(() => disposer, `${PLUGIN_NAME}: ${RPC_CHANNEL} channel`);

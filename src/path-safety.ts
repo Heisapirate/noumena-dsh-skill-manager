@@ -33,6 +33,9 @@ declare const safePathBrand: unique symbol;
 /** An absolute path validated to be strictly inside the managed skills root. */
 export type SafePath = string & { readonly [safePathBrand]: 'safe-path' };
 
+/** The kind of on-disk entry at a skill directory path (never follows links). */
+export type SkillDirKind = 'missing' | 'directory' | 'symlink' | 'file';
+
 // ---------------------------------------------------------------------------
 // Typed failures for later RPC/UI normalization.
 // ---------------------------------------------------------------------------
@@ -349,6 +352,22 @@ export class SkillRoot {
   /** Recursively delete a validated skill directory (idempotent; never follows links). */
   async removeSkillDir(name: string): Promise<void> {
     await this.removeContained(this.skillDir(name));
+  }
+
+  /**
+   * Classify the on-disk entry at a validated skill directory path using
+   * `lstat` (never follows links). This is the single seam transactions use to
+   * decide ownership/missing-state/drift without reaching into `node:fs` or
+   * duplicating errno mapping. Missing only means the path is absent; a
+   * symlink/junction is reported as `symlink`, not followed.
+   */
+  async classifySkill(name: string): Promise<SkillDirKind> {
+    const target = this.skillDir(name);
+    const st = await tryLstat(target);
+    if (!st) return 'missing';
+    if (st.isSymbolicLink()) return 'symlink';
+    if (st.isDirectory()) return 'directory';
+    return 'file';
   }
 
   private async realRoot(): Promise<string> {
