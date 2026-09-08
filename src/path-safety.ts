@@ -16,8 +16,8 @@
 // The pure checks are filesystem-free and deterministic across platforms; the
 // `caseInsensitive` option defaults to `process.platform === 'win32'`.
 
-import { lstat, mkdir, realpath, rename, rm } from 'node:fs/promises';
-import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
+import { lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import type { Stats } from 'node:fs';
 
 // ---------------------------------------------------------------------------
@@ -32,6 +32,17 @@ export type SkillName = string & { readonly [skillNameBrand]: 'skill-name' };
 declare const safePathBrand: unique symbol;
 /** An absolute path validated to be strictly inside the managed skills root. */
 export type SafePath = string & { readonly [safePathBrand]: 'safe-path' };
+
+/** The kind of on-disk entry at a skill directory path (never follows links). */
+export type SkillDirKind = 'missing' | 'directory' | 'symlink' | 'file';
+
+/** A single file to materialize into a validated directory (path + UTF-8 contents). */
+export interface SnapshotFile {
+  /** `/`-separated path relative to the target directory. */
+  path: string;
+  /** UTF-8 file contents. */
+  contents: string;
+}
 
 // ---------------------------------------------------------------------------
 // Typed failures for later RPC/UI normalization.
@@ -337,6 +348,23 @@ export class SkillRoot {
     await this.removeContained(this.stagingDir(name));
   }
 
+  /**
+   * Write a set of snapshot files into a validated directory (a staging or skill
+   * dir). Every file path is re-validated and resolved strictly inside `dir`,
+   * its parent directory is created one component at a time (never through an
+   * unverified symlink), and the file is written only to the validated target.
+   */
+  async materializeFiles(dir: SafePath, files: readonly SnapshotFile[]): Promise<void> {
+    this.assertInside(dir);
+    for (const file of files) {
+      const target = this.relativeFile(dir, file.path);
+      // `dirname(target)` is derived from a validated path and stays inside `dir`;
+      // `mkdirContained` re-asserts containment before creating anything.
+      await this.mkdirContained(dirname(target) as SafePath);
+      await wrapFs(writeFile(target, file.contents, 'utf8'), target);
+    }
+  }
+
   /** Atomically rename a staged directory into place as the skill directory. */
   async publishStaged(name: string): Promise<void> {
     const from = this.stagingDir(name);
@@ -346,9 +374,64 @@ export class SkillRoot {
     await wrapFs(rename(from, to), to);
   }
 
+  /**
+   * Move an existing skill directory to its backup slot (under the staging area)
+   * so a staged replacement can be renamed into place. Returns whether there was
+   * a skill directory to move. A stale backup is dropped first only when the
+   * current skill dir still exists (the current content is authoritative).
+   */
+  async moveSkillToBackup(name: string): Promise<boolean> {
+    const to = this.skillDir(name);
+    const backup = this.backupDir(name);
+    await this.assertContainedReal(to);
+    const st = await tryLstat(to);
+    if (!st) return false;
+    await this.removeContained(backup);
+    await wrapFs(rename(to, backup), backup);
+    return true;
+  }
+
+  /** Restore a backed-up skill directory back to the skill dir (rollback). */
+  async restoreBackup(name: string): Promise<void> {
+    const to = this.skillDir(name);
+    const backup = this.backupDir(name);
+    await this.assertContainedReal(backup);
+    if (!(await tryLstat(backup))) return;
+    await wrapFs(rename(backup, to), to);
+  }
+
+  /** Delete a skill's backup directory (idempotent). */
+  async removeBackup(name: string): Promise<void> {
+    await this.removeContained(this.backupDir(name));
+  }
+
   /** Recursively delete a validated skill directory (idempotent; never follows links). */
   async removeSkillDir(name: string): Promise<void> {
     await this.removeContained(this.skillDir(name));
+  }
+
+  /**
+   * Classify the on-disk entry at a validated skill directory path using
+   * `lstat` (never follows links). This is the single seam transactions use to
+   * decide ownership/missing-state/drift without reaching into `node:fs` or
+   * duplicating errno mapping. Missing only means the path is absent; a
+   * symlink/junction is reported as `symlink`, not followed.
+   */
+  async classifySkill(name: string): Promise<SkillDirKind> {
+    const target = this.skillDir(name);
+    const st = await tryLstat(target);
+    if (!st) return 'missing';
+    if (st.isSymbolicLink()) return 'symlink';
+    if (st.isDirectory()) return 'directory';
+    return 'file';
+  }
+
+  /** Backup slot for a skill's prior directory, kept inside the staging area. */
+  private backupDir(name: string): SafePath {
+    assertSkillName(name);
+    const target = resolve(this.path, ...STAGING_SEGMENTS, `.backup-${name}`);
+    this.assertInside(target);
+    return target as SafePath;
   }
 
   private async realRoot(): Promise<string> {

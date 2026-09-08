@@ -10,3 +10,11 @@ export const ENDPOINT_PING = 'ping';
 export const ENDPOINT_SEARCH = 'search';
 /** Lazily hydrate one result's description from its snapshot (Issue #13). */
 export const ENDPOINT_DESCRIBE = 'describe';
+/** Installs one GitHub-backed skill (Issue #14 install transaction). */
+export const ENDPOINT_INSTALL = 'install';
+/** Update detection endpoint (Issue #16). */
+export const ENDPOINT_CHECK_UPDATES = 'checkUpdates';
+/** Update transaction endpoint (Issue #16). */
+export const ENDPOINT_UPDATE = 'update';
+/** Remove a plugin-managed skill (Issue #17; destructive, confirmation-gated). */
+export const ENDPOINT_UNINSTALL = 'uninstall';
