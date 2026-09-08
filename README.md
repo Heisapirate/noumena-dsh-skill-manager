@@ -67,19 +67,17 @@ DSH WebUI → **Settings → DSH Skill Manager**:
 
 ## Screenshots
 
-Screenshots are captured as real images — none are fabricated, and the files are
-added as a human capture step before final submission. The exact capture
-checklist and filenames live in [`docs/screenshots.md`](docs/screenshots.md);
-images are placed in [`docs/assets/`](docs/assets/). The five planned captures
-are:
+Real captures from the isolated DSH runtime.
 
-- `docs/assets/search-results.png` — the settings page with populated search
-  results and their metadata
-- `docs/assets/install-success.png` — a search row flipped to the "Installed"
-  success state after install
-- `docs/assets/managed-update-available.png` — managed skill with update badge
-- `docs/assets/uninstall-confirmation.png` — uninstall confirmation prompt
-- `docs/assets/managed-empty-state.png` — empty state after uninstall
+![Populated live search results from skills.sh](docs/assets/search-results.png)
+
+![`find-skills` shown as Installed](docs/assets/install-success.png)
+
+![Managed skill with the Update available badge](docs/assets/managed-update-available.png)
+
+![Destructive uninstall confirmation state](docs/assets/uninstall-confirmation.png)
+
+![Plugin-scoped empty state after uninstall](docs/assets/managed-empty-state.png)
 
 ## Architecture
 

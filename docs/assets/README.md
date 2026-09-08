@@ -1,13 +1,11 @@
 # docs/assets
 
-Holds the real screenshots referenced by the README. See
-[`docs/screenshots.md`](../screenshots.md) for the exact capture checklist and
-filenames. Images are added by hand — none are generated or fabricated.
+Holds the real screenshots referenced by the README, captured from the isolated
+DSH runtime. See [`docs/screenshots.md`](../screenshots.md) for the capture
+checklist. Images are added by hand — none are generated or fabricated.
 
-Expected files:
-
-- `search-results.png`
-- `install-success.png`
-- `managed-update-available.png`
-- `uninstall-confirmation.png`
-- `managed-empty-state.png`
+- `search-results.png` — populated live search results
+- `install-success.png` — `find-skills` shown as Installed
+- `managed-update-available.png` — managed skill with the Update available badge
+- `uninstall-confirmation.png` — destructive uninstall confirmation state
+- `managed-empty-state.png` — plugin-scoped empty state after uninstall
