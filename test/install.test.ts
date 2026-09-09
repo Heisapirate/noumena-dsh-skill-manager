@@ -173,6 +173,29 @@ describe('installSkill — valid install', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 1b. Fresh skills root (the GitHub-installed runtime does not pre-create it)
+// ---------------------------------------------------------------------------
+
+describe('installSkill — fresh skills root', () => {
+  it('creates the skills root when it does not yet exist (fresh install)', async () => {
+    // `mkdtemp` yields an existing PARENT; the skills root under it is absent,
+    // mirroring a fresh `$DSH_HOME/skills` that the DSH runtime has not created.
+    const parent = await mkdtemp(join(tmpdir(), 'sm-install-fresh-'));
+    roots.push(parent);
+    const root = join(parent, 'skills'); // does not exist yet
+
+    await installSkill(makeDeps(root), { id: ID });
+
+    // The root was created, the skill was published inside it, and provenance
+    // was recorded — the exact fresh-install path that previously failed.
+    expect(await exists(join(root, SLUG, 'SKILL.md'))).toBe(true);
+    const manifest = await readManifest(root);
+    expect(manifest.skills[SLUG].slug).toBe(SLUG);
+    expect(manifest.skills[SLUG].source).toBe(SOURCE);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 2. Source / installability validation
 // ---------------------------------------------------------------------------
 
