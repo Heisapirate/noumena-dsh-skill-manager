@@ -443,12 +443,14 @@ export class SkillRoot {
    * Create the skills root (`$DSH_HOME/skills`) if it is missing. The DSH
    * runtime does not eagerly create it, so on a fresh install the very first
    * mutation must create this fixed root before `realpath` can resolve it.
-   * Idempotent and confined to the plugin's own root.
+   * Non-recursive: it creates only the root leaf (its parent `$DSH_HOME`
+   * necessarily exists, because the plugin is loaded from inside it), so it
+   * never creates ancestors or follows a symlink mid-path like `mkdir -p`.
    */
   private async ensureRootExists(): Promise<void> {
     const st = await tryLstat(this.path);
     if (!st) {
-      await wrapFs(mkdir(this.path, { recursive: true }), this.path);
+      await wrapFs(mkdir(this.path), this.path);
     }
   }
 
